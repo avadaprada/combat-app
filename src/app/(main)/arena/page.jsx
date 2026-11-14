@@ -301,32 +301,47 @@ export default function ArenaPage() {
     }
   }
 
-  const downloadMatchData = async () => {
-    if (!matchDataRef.current) return;
-    setIsDownloading(true);
+const downloadMatchData = async () => {
+  if (!matchDataRef.current) return;
+  setIsDownloading(true);
 
-    const wrapper = document.getElementById('matchdata-scale-wrapper');
-    const originalClass = wrapper ? wrapper.className : '';
+  try {
+    // Clone node untuk dirender off-screen pada ukuran desktop penuh.
+    // Ini memastikan hasil gambar SELALU tampilan desktop 1500px,
+    // meskipun user sedang zoom/scroll di mobile.
+    const clone = matchDataRef.current.cloneNode(true);
+    clone.style.position = 'fixed';
+    clone.style.top = '-99999px';
+    clone.style.left = '0';
+    clone.style.width = '1500px';
+    clone.style.transform = 'none';
+    clone.style.zIndex = '-1';
+    document.body.appendChild(clone);
 
-    try {
-      // Hapus efek scale untuk menghasilkan gambar beresolusi penuh
-      if (wrapper) wrapper.className = 'origin-top shrink-0 w-[1500px]';
-      await new Promise(resolve => setTimeout(resolve, 300));
+    // Tunggu sebentar supaya gambar (img) sudah ter-load di clone
+    await new Promise(resolve => setTimeout(resolve, 400));
 
-      const canvas = await html2canvas(matchDataRef.current, {
-        scale: 2, backgroundColor: '#0f141c', useCORS: true, logging: false, width: 1500, windowWidth: 1500
-      });
-      const link = document.createElement('a');
-      link.download = `match-data-${arenaData.license.id}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    } catch (err) {
-      setModal({ isOpen: true, message: 'Gagal menyimpan gambar: ' + err.message, type: 'error' });
-    } finally {
-      if (wrapper) wrapper.className = originalClass;
-      setIsDownloading(false);
-    }
+    const canvas = await html2canvas(clone, {
+      scale: 2,
+      backgroundColor: '#0f141c',
+      useCORS: true,
+      logging: false,
+      width: 1500,
+      windowWidth: 1500,
+    });
+
+    document.body.removeChild(clone);
+
+    const link = document.createElement('a');
+    link.download = `match-data-${arenaData.license.id}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } catch (err) {
+    setModal({ isOpen: true, message: 'Gagal menyimpan gambar: ' + err.message, type: 'error' });
+  } finally {
+    setIsDownloading(false);
   }
+};
 
   const handleFinalizeDuel = async (navigateTo) => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -1124,252 +1139,363 @@ export default function ArenaPage() {
       )}
 
       {/* ================= MODAL PRE-COMBAT (DATA MATCH) ================= */}
-      {showMatchData && arenaData && duelData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm overflow-hidden">
-          
-          {/* Modal Container */}
-          <div className="bg-[#1c222e] border border-[#8c7f73] w-full max-w-[1600px] h-[95vh] md:h-auto md:max-h-[95vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
-            
-            {/* Header Modal */}
-            <div className="flex justify-between items-center p-3 md:p-4 border-b border-[#8c7f73] shrink-0 bg-[#12161f]">
-              <h3 className="text-[#e3d0b3] font-bold tracking-widest uppercase text-xs md:text-sm">
-                Pre-Combat Preview
-              </h3>
-              <button 
-                onClick={() => setShowMatchData(false)} 
-                className="text-[#8c7f73] hover:text-white transition-colors bg-[#85200c]/20 hover:bg-[#85200c] border border-[#85200c] px-3 py-1 rounded text-xs font-bold uppercase tracking-widest"
-              >
-                ✕ Tutup
-              </button>
+{showMatchData && arenaData && duelData && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm overflow-hidden">
+
+    {/* Modal Container */}
+    <div className="bg-[#1c222e] border border-[#8c7f73] w-full max-w-[1600px] h-[95vh] md:h-auto md:max-h-[95vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
+
+      {/* Header Modal */}
+      <div className="flex justify-between items-center p-3 md:p-4 border-b border-[#8c7f73] shrink-0 bg-[#12161f]">
+        <h3 className="text-[#e3d0b3] font-bold tracking-widest uppercase text-xs md:text-sm">
+          Pre-Combat Preview
+        </h3>
+        <button
+          onClick={() => setShowMatchData(false)}
+          className="text-[#8c7f73] hover:text-white transition-colors bg-[#85200c]/20 hover:bg-[#85200c] border border-[#85200c] px-3 py-1 rounded text-xs font-bold uppercase tracking-widest"
+        >
+          ✕ Tutup
+        </button>
+      </div>
+
+      {/* Body Modal */}
+      <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar flex flex-col items-center">
+
+        {/*
+          ============================================================
+          WRAPPER SCROLL MANUAL (MOBILE ZOOM)
+          - Mobile: kartu 1500px tetap asli, user bisa scroll horizontal
+            dan pinch-zoom via browser.
+          - Desktop: kartu otomatis full-width (md:overflow-visible).
+          ============================================================
+        */}
+        <div className="w-full flex justify-center overflow-auto md:overflow-visible pb-2 touch-pan-x touch-pan-y">
+          {/* Ini adalah container asli yang akan kita screenshot (desktop size) */}
+          <div
+            ref={matchDataRef}
+            className="relative w-[1500px] shrink-0 bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden"
+          >
+
+            {/* Ornamen batang diagonal kiri */}
+            <div className="absolute top-0 bottom-0 left-6 flex flex-col justify-around py-10 z-0">
+              {[1,2,3,4,5,6,7,8,9].map(i => (
+                <div key={i} className="w-8 h-8 bg-[#e3d0b3] rotate-45 shadow-sm" />
+              ))}
             </div>
 
-            {/* Body Modal */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar flex flex-col items-center">
-              
-              {/* Pre-Combat Card Wrapper */}
-              <div className="w-full flex justify-center overflow-hidden pb-2">
-                <div className="relative w-[1500px] h-[350px] min-[390px]:h-[450px] sm:h-[800px] md:h-auto flex justify-center md:block">
-                  
-                  <div id="matchdata-scale-wrapper" className="origin-top scale-[0.22] min-[390px]:scale-[0.28] sm:scale-[0.45] md:scale-100 shrink-0">
-                    <div ref={matchDataRef} className="relative w-[1500px] bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden">
-                      
-                      <div className="absolute top-0 bottom-0 left-6 flex flex-col justify-around py-10 z-0">
-                         {[1,2,3,4,5,6,7,8,9].map(i => (<div key={i} className="w-8 h-8 bg-[#e3d0b3] rotate-45 shadow-sm" />))}
-                      </div>
+            {/* Kartu utama */}
+            <div className="relative w-full bg-[#1c222e] border-[6px] border-[#e3d0b3] p-8 md:p-10 z-10 shadow-2xl">
 
-                      <div className="relative w-full bg-[#1c222e] border-[6px] border-[#e3d0b3] p-8 md:p-10 z-10 shadow-2xl">
-                        <div className="absolute top-0 left-0 w-24 h-12 border-r-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-                        <div className="absolute top-0 right-0 w-16 h-24 border-l-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-                        <div className="absolute bottom-0 left-0 w-16 h-24 border-r-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-                        <div className="absolute bottom-0 right-0 w-24 h-12 border-l-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-                        
-                        <div className="absolute top-6 right-24 flex gap-1 z-20">
-                          {[1,2,3,4,5,6,7].map(i => (<div key={i} className="w-3 h-8 bg-[#8c7f73] transform -skew-x-[30deg]"></div>))}
-                        </div>
+              {/* Ornamen sudut */}
+              <div className="absolute top-0 left-0 w-24 h-12 border-r-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
+              <div className="absolute top-0 right-0 w-16 h-24 border-l-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
+              <div className="absolute bottom-0 left-0 w-16 h-24 border-r-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
+              <div className="absolute bottom-0 right-0 w-24 h-12 border-l-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
 
-                        <div className="flex items-center gap-4 mb-6 relative z-10">
-                          <img src={LOGO_MAHOUTOKORO} alt="Mahoutokoro" className="h-16 object-contain" crossOrigin="anonymous" />
-                          <div className="flex flex-col">
-                            <span className="text-[#8c7f73] font-bold text-[10px] tracking-[3px]">MAHOUTOKORO</span>
-                            <span className="text-[#e3d0b3] font-bold text-3xl tracking-widest leading-none">COMBAT</span>
-                          </div>
-                        </div>
+              {/* Ornamen kanan atas */}
+              <div className="absolute top-6 right-24 flex gap-1 z-20">
+                {[1,2,3,4,5,6,7].map(i => (
+                  <div key={i} className="w-3 h-8 bg-[#8c7f73] transform -skew-x-[30deg]"></div>
+                ))}
+              </div>
 
-                        <div className="flex flex-wrap items-center gap-4 mb-2 relative z-10">
-                          <div className="bg-[#e3d0b3] text-[#1c222e] font-bold text-sm px-4 py-2 uppercase tracking-wide">Personal Data Section</div>
-                          <div className="flex-1 border-b border-[#e3d0b3] h-0"></div>
-                          <div className="text-right">
-                            <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">POINT</div>
-                            <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">SECTION</div>
-                          </div>
-                          <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] font-bold px-4 py-2 text-sm">{arenaData.license.exp} EXP</div>
-                          <div className="font-bold text-xl px-8 py-2 uppercase tracking-widest text-[#1c222e]" style={{ backgroundColor: '#c59968' }}>{arenaData.license.tier}</div>
-                        </div>
+              {/* Logo & Title */}
+              <div className="flex items-center gap-4 mb-6 relative z-10">
+                <img src={LOGO_MAHOUTOKORO} alt="Mahoutokoro" className="h-16 object-contain" crossOrigin="anonymous" />
+                <div className="flex flex-col">
+                  <span className="text-[#8c7f73] font-bold text-[10px] tracking-[3px]">MAHOUTOKORO</span>
+                  <span className="text-[#e3d0b3] font-bold text-3xl tracking-widest leading-none">COMBAT</span>
+                </div>
+              </div>
 
-                        <div className="mb-8 w-full relative z-10">
-                          <div className="flex justify-between text-[10px] text-[#8c7f73] mb-1 px-1">
-                            <span>{arenaData.license.tierProgress?.expToNext || 0} EXP LAGI KE {arenaData.license.tierProgress?.nextTier?.toUpperCase() || 'MAX'}</span>
-                            <span>{arenaData.license.tierProgress?.pct || 100}%</span>
-                          </div>
-                          <div className="w-full h-2.5 border border-[#8c7f73] border-dashed bg-[#12161f] relative">
-                            <div className="h-full bg-[#e3d0b3]" style={{ width: `${arenaData.license.tierProgress?.pct || 100}%` }}></div>
-                            <div className="absolute inset-0 flex justify-between px-1">
-                               {[...Array(40)].map((_, i) => <div key={i} className="w-px h-full bg-[#1c222e] opacity-20"></div>)}
-                            </div>
-                          </div>
-                        </div>
+              {/* Header bar: Personal Data + Tier */}
+              <div className="flex flex-wrap items-center gap-4 mb-2 relative z-10">
+                <div className="bg-[#e3d0b3] text-[#1c222e] font-bold text-sm px-4 py-2 uppercase tracking-wide">
+                  Personal Data Section
+                </div>
+                <div className="flex-1 border-b border-[#e3d0b3] h-0"></div>
+                <div className="text-right">
+                  <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">POINT</div>
+                  <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">SECTION</div>
+                </div>
+                <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] font-bold px-4 py-2 text-sm">
+                  {arenaData.license.exp} EXP
+                </div>
+                <div className="font-bold text-xl px-8 py-2 uppercase tracking-widest text-[#1c222e]" style={{ backgroundColor: '#c59968' }}>
+                  {arenaData.license.tier}
+                </div>
+              </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10">
-                          
-                          <div className="lg:col-span-4 flex flex-col items-center">
-                            <div className="w-full text-left text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">SUMMON SECTION</div>
-                            
-                            <div className="relative w-full flex justify-center items-center mb-6 py-4">
-                              <img src={BAKEMONO_IMG} alt="Bakemono" className="absolute left-4 w-16 h-16 object-contain z-20 opacity-90" crossOrigin="anonymous"/>
-                              <div className="relative w-48 h-48 flex items-center justify-center">
-                                 <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#e3d0b3]">
-                                    <defs><pattern id="meander" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M0 5 h5 v-5 h5 v10 h-5 v-5 h-5 z" fill="none" stroke="currentColor" strokeWidth="1" /></pattern></defs>
-                                    <circle cx="50" cy="50" r="48" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="4 2" />
-                                    <circle cx="50" cy="50" r="43" fill="none" stroke="currentColor" strokeWidth="3" />
-                                    <circle cx="50" cy="50" r="40" fill="url(#meander)" stroke="currentColor" strokeWidth="2" />
-                                 </svg>
-                                 <img src={arenaData.license.photoUrl} alt="Foto" className="relative z-10 w-[72%] h-[72%] rounded-full object-cover bg-[#12161f]" crossOrigin="anonymous" />
-                              </div>
-                            </div>
-
-                            <div className="w-full bg-[#e3d0b3] text-[#1c222e] p-4 relative mb-6" style={{ clipPath: 'polygon(20px 0, 100% 0, 100% 100%, 0 100%, 0 20px)' }}>
-                              <div className="font-bold text-2xl mb-1">{arenaData.license.name}</div>
-                              <div className="font-bold text-sm opacity-70">{arenaData.license.id}</div>
-                            </div>
-
-                            <div className="w-full border border-[#8c7f73] border-dashed p-4 relative mb-6">
-                              <div className="text-[10px] text-[#e3d0b3] font-bold tracking-widest mb-3">ENEMY SECTION</div>
-                              <div className="flex items-center gap-4 mb-3">
-                                <img src={arenaData.opponent.photoUrl} alt="Opponent" className="w-16 h-16 rounded-full border border-[#8c7f73] object-cover bg-[#12161f]" crossOrigin="anonymous" />
-                                <div>
-                                  <div className="text-[#e3d0b3] font-bold text-sm">{arenaData.opponent.name}</div>
-                                  <div className="text-[#8c7f73] text-[10px]">ID: {arenaData.opponent.id}</div>
-                                  <div className="text-[#8c7f73] text-[10px] uppercase">TIER: {arenaData.opponent.tier}</div>
-                                </div>
-                              </div>
-                              <div className="flex gap-2">
-                                <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">AE {arenaData.opponent.ae}</div>
-                                <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">VP {arenaData.opponent.vp}</div>
-                              </div>
-                            </div>
-
-                            <div className="mt-8 flex flex-col items-center w-full">
-                               <svg className="w-[80%] h-10 mb-2 opacity-80" preserveAspectRatio="none" viewBox="0 0 100 20">
-                                  {[...Array(40)].map((_, i) => (<rect key={i} x={i * 2.5} y="0" width={i % 3 === 0 ? "1.5" : "0.8"} height="20" fill="#e3d0b3" />))}
-                               </svg>
-                              <div className="flex items-center gap-2">
-                                <img src={LOGO_MINISTRY} className="w-6 h-6 object-contain" alt="Seal" crossOrigin="anonymous" />
-                                <div className="text-[8px] font-bold tracking-widest text-[#8c7f73] text-center"><div>JAPANESE MINISTRY OF MAGIC</div><div>COMBAT OFFICE ©2026</div></div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="lg:col-span-4 flex flex-col">
-                            <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">BASIC ENERGY</div>
-                            <div className="flex flex-col gap-2 mb-8">
-                              <div className="flex border border-[#8c7f73] bg-[#12161f] h-14">
-                                <div className="bg-[#e3d0b3] text-[#1c222e] w-14 flex items-center justify-center font-bold text-lg relative"><div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-6"></div> AE</div>
-                                <div className="flex-1 flex items-center px-6 text-[#e3d0b3] text-2xl font-bold">{arenaData.license.ae}</div>
-                              </div>
-                              <div className="flex border border-[#8c7f73] bg-[#12161f] h-14 justify-end">
-                                <div className="flex-1 flex items-center px-6 text-[#e3d0b3] text-2xl font-bold justify-end">{arenaData.license.vp}</div>
-                                <div className="bg-[#e3d0b3] text-[#1c222e] w-14 flex items-center justify-center font-bold text-lg relative"><div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-6"></div> VP</div>
-                              </div>
-                            </div>
-
-                            <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">COMBAT STYLE</div>
-                            <div className="grid grid-cols-2 gap-2 mb-8">
-                               {['spellcraft', 'armament', 'alchemia', 'relicium'].map(style => (
-                                 <div key={style} className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
-                                   <span className="text-[#e3d0b3] text-[10px] font-bold uppercase">{style}</span>
-                                   <div className={`w-5 h-5 ${arenaData.license.combatStyle?.[style] === true ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[10px] font-bold rounded-sm`}>
-                                     {arenaData.license.combatStyle?.[style] === true ? '✓' : '✕'}
-                                   </div>
-                                 </div>
-                               ))}
-                               <div className="col-span-2 flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
-                                  <span className="text-[#e3d0b3] text-[10px] font-bold">COMBINATION</span>
-                                  <div className={`w-5 h-5 ${arenaData.license.combatStyle?.combination === true ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[10px] font-bold rounded-sm`}>
-                                    {arenaData.license.combatStyle?.combination === true ? '✓' : '🔒'}
-                                  </div>
-                               </div>
-                            </div>
-
-                            <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">COMBAT STATISTICS</div>
-                            <div className="space-y-4 mb-8">
-                              {['win', 'draw', 'lose'].map((label) => {
-                                const val = arenaData.license.stats?.[label] || 0;
-                                const color = label === 'win' ? '#e3d0b3' : label === 'lose' ? '#85200c' : '#8c7f73';
-                                return (
-                                  <div key={label}>
-                                    <div className="flex justify-between text-[10px] text-[#8c7f73] font-bold mb-1"><div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }}></div>{label.toUpperCase()}</div><span>{val}%</span></div>
-                                    <div className="w-full h-2 bg-[#12161f] border border-[#8c7f73] border-dashed"><div className="h-full" style={{ width: `${val}%`, backgroundColor: color }}></div></div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-
-                            <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">TURN SECTION</div>
-                            <div className="border border-[#8c7f73] bg-[#12161f] p-4 relative mt-2">
-                              <div className="absolute top-[30px] left-[10%] right-[10%] h-[1px] bg-[#8c7f73] z-0"></div>
-                              <div className="flex justify-between items-start relative z-10">
-                                {[1,2,3].map((num) => {
-                                  const isCurrent = duelData.duelNumber === num || num === 2;
-                                  const isDone = num < 2;
-                                  return (
-                                    <div key={num} className="flex flex-col items-center w-1/3">
-                                      <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold mb-2 bg-[#12161f] ${isCurrent ? 'border-[#e3d0b3] text-[#e3d0b3]' : 'border-[#8c7f73] text-[#8c7f73]'}`}>{isDone ? '✓' : num}</div>
-                                      <div className="text-[10px] text-[#e3d0b3] font-bold mb-1">DUEL {num}</div>
-                                      <div className="text-[8px] text-[#8c7f73] text-center uppercase whitespace-nowrap">Lawan mulai duluan</div>
-                                      <div className={`text-[8px] mt-1 font-bold ${isCurrent ? 'text-[#e3d0b3]' : 'text-[#85200c]'}`}>{isDone ? 'SELESAI' : isCurrent ? 'BERJALAN' : 'BELUM MULAI'}</div>
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="lg:col-span-4 flex flex-col">
-                            <div className="w-full flex justify-end mb-4">
-                               <div className="bg-[#f4e8d3] text-[#1c222e] text-center font-bold py-2 px-8 relative" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 15px 100%, 0 calc(100% - 15px))' }}><span className="text-sm tracking-widest">{arenaData.duel[arenaData.myRole.toLowerCase()].style?.toUpperCase() || 'SPELLCRAFT'}</span></div>
-                            </div>
-                            <div className="text-[#8c7f73] text-[10px] font-bold text-right mb-3">{selectedMaterials.length || (duelData[arenaData.myRole.toLowerCase()].deck || []).length} / {TIER_DECK_LIMIT[arenaData.license.tier] || 5} MATERIAL (DECK TERKUNCI)</div>
-
-                            <div className="flex flex-col gap-1 relative border-l-2 border-[#8c7f73] pl-2">
-                               {(duelData[arenaData.myRole.toLowerCase()].deck || []).map((matName, i) => {
-                                  const mat = materialsList.find(m => m.name === matName);
-                                  if(!mat) return null;
-                                  let tagClr = 'bg-[#85200c] text-[#e3d0b3]';
-                                  if(mat.format.toLowerCase().includes('def')) tagClr = 'bg-[#e3d0b3] text-[#1c222e]';
-                                  if(mat.format.toLowerCase().includes('regen')) tagClr = 'border border-[#8c7f73] text-[#e3d0b3] bg-transparent';
-                                  return (
-                                     <div key={i} className="flex justify-between items-center border border-[#8c7f73] bg-[#12161f] p-2">
-                                        <span className="text-[#e3d0b3] text-xs font-bold flex-1">{mat.name}</span>
-                                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-sm mr-2 ${tagClr}`}>{mat.format.substring(0,3).toUpperCase()}</span>
-                                        <div className="w-5 h-5 bg-[#e3d0b3] flex items-center justify-center rounded-sm"><svg className="w-3 h-3 text-[#1c222e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg></div>
-                                     </div>
-                                  )
-                               })}
-                               {[...Array(Math.max(0, (TIER_DECK_LIMIT[arenaData.license.tier] || 5) - (duelData[arenaData.myRole.toLowerCase()].deck || []).length))].map((_, i) => (
-                                  <div key={`empty-${i}`} className="flex justify-between items-center border border-[#5a5650] bg-[#12161f] p-2 opacity-50">
-                                    <span className="text-[#5a5650] text-xs font-bold italic">Slot Terkunci</span>
-                                    <span className="text-[#5a5650] text-[8px] font-bold px-1.5 py-0.5">🔒</span>
-                                  </div>
-                               ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="mt-10 pt-4 border-t border-[#8c7f73] border-dashed flex justify-between text-[10px] text-[#8c7f73] tracking-widest relative z-10">
-                          <span>DIPERBARUI: {new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})} WIB (GMT+7)</span>
-                        </div>
-                      </div>
-                    </div>
+              {/* Progress bar EXP */}
+              <div className="mb-8 w-full relative z-10">
+                <div className="flex justify-between text-[10px] text-[#8c7f73] mb-1 px-1">
+                  <span>{arenaData.license.tierProgress?.expToNext || 0} EXP LAGI KE {arenaData.license.tierProgress?.nextTier?.toUpperCase() || 'MAX'}</span>
+                  <span>{arenaData.license.tierProgress?.pct || 100}%</span>
+                </div>
+                <div className="w-full h-2.5 border border-[#8c7f73] border-dashed bg-[#12161f] relative">
+                  <div className="h-full bg-[#e3d0b3]" style={{ width: `${arenaData.license.tierProgress?.pct || 100}%` }}></div>
+                  <div className="absolute inset-0 flex justify-between px-1">
+                    {[...Array(40)].map((_, i) => <div key={i} className="w-px h-full bg-[#1c222e] opacity-20"></div>)}
                   </div>
                 </div>
               </div>
 
-              {/* Tombol Download di bawah Pre-Combat */}
-              <div className="mt-4 md:mt-8 mb-4 shrink-0">
-                <button 
-                  onClick={downloadMatchData} 
-                  disabled={isDownloading} 
-                  className="bg-[#1C2330] border-2 border-[#e3d0b3] text-[#e3d0b3] px-8 py-3 text-sm font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                  {isDownloading ? 'MENYIMPAN...' : 'SIMPAN PRE-COMBAT'}
-                </button>
+              {/* ===== GRID 3 KOLOM (sesuai txt 1) ===== */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10">
+
+                {/* KOLOM 1: SUMMON SECTION */}
+                <div className="lg:col-span-4 flex flex-col items-center">
+                  <div className="w-full text-left text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">SUMMON SECTION</div>
+
+                  <div className="relative w-full flex justify-center items-center mb-6 py-4">
+                    <img src={BAKEMONO_IMG} alt="Bakemono" className="absolute left-4 w-16 h-16 object-contain z-20 opacity-90" crossOrigin="anonymous"/>
+                    <div className="relative w-48 h-48 flex items-center justify-center">
+                      <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#e3d0b3]">
+                        <defs>
+                          <pattern id="meander" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
+                            <path d="M0 5 h5 v-5 h5 v10 h-5 v-5 h-5 z" fill="none" stroke="currentColor" strokeWidth="1" />
+                          </pattern>
+                        </defs>
+                        <circle cx="50" cy="50" r="48" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="4 2" />
+                        <circle cx="50" cy="50" r="43" fill="none" stroke="currentColor" strokeWidth="3" />
+                        <circle cx="50" cy="50" r="40" fill="url(#meander)" stroke="currentColor" strokeWidth="2" />
+                      </svg>
+                      <img src={arenaData.license.photoUrl} alt="Foto" className="relative z-10 w-[72%] h-[72%] rounded-full object-cover bg-[#12161f]" crossOrigin="anonymous" />
+                    </div>
+                  </div>
+
+                  <div className="w-full bg-[#e3d0b3] text-[#1c222e] p-4 relative mb-6" style={{ clipPath: 'polygon(20px 0, 100% 0, 100% 100%, 0 100%, 0 20px)' }}>
+                    <div className="font-bold text-2xl mb-1">{arenaData.license.name}</div>
+                    <div className="font-bold text-sm opacity-70">{arenaData.license.id}</div>
+                  </div>
+
+                  <div className="w-full border border-[#8c7f73] border-dashed p-4 relative mb-6">
+                    <div className="text-[10px] text-[#e3d0b3] font-bold tracking-widest mb-3">ENEMY SECTION</div>
+                    <div className="flex items-center gap-4 mb-3">
+                      <img src={arenaData.opponent.photoUrl} alt="Opponent" className="w-16 h-16 rounded-full border border-[#8c7f73] object-cover bg-[#12161f]" crossOrigin="anonymous" />
+                      <div>
+                        <div className="text-[#e3d0b3] font-bold text-sm">{arenaData.opponent.name}</div>
+                        <div className="text-[#8c7f73] text-[10px]">ID: {arenaData.opponent.id}</div>
+                        <div className="text-[#8c7f73] text-[10px] uppercase">TIER: {arenaData.opponent.tier}</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">AE {arenaData.opponent.ae}</div>
+                      <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">VP {arenaData.opponent.vp}</div>
+                    </div>
+                  </div>
+
+                  <div className="w-full">
+                    <div className="text-[10px] text-[#8c7f73] font-bold mb-2">STATISTIK LAWAN - TOTAL {arenaData.opponent.totalDuel || 0} DUEL</div>
+                    <div className="space-y-1.5">
+                      {['win', 'draw', 'lose'].map((label) => {
+                        const val = arenaData.opponent.stats?.[label] || 0;
+                        const color = label === 'win' ? '#e3d0b3' : label === 'lose' ? '#85200c' : '#8c7f73';
+                        return (
+                          <div key={label} className="flex items-center gap-2">
+                            <span className="text-[9px] text-[#8c7f73] w-8 uppercase">{label}</span>
+                            <div className="flex-1 h-1.5 bg-[#12161f] border border-[#8c7f73]">
+                              <div className="h-full" style={{ width: `${val}%`, backgroundColor: color }}></div>
+                            </div>
+                            <span className="text-[9px] text-[#e3d0b3] w-8 text-right">{val}%</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex flex-col items-center w-full">
+                    <svg className="w-[80%] h-10 mb-2 opacity-80" preserveAspectRatio="none" viewBox="0 0 100 20">
+                      {[...Array(40)].map((_, i) => (
+                        <rect key={i} x={i * 2.5} y="0" width={i % 3 === 0 ? "1.5" : "0.8"} height="20" fill="#e3d0b3" />
+                      ))}
+                    </svg>
+                    <div className="flex items-center gap-2">
+                      <img src={LOGO_MINISTRY} className="w-6 h-6 object-contain" alt="Seal" crossOrigin="anonymous" />
+                      <div className="text-[8px] font-bold tracking-widest text-[#8c7f73] text-center">
+                        <div>JAPANESE MINISTRY OF MAGIC</div>
+                        <div>COMBAT OFFICE ©2026</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* KOLOM 2: BASIC ENERGY + COMBAT STYLE + STATISTICS + TURN */}
+                <div className="lg:col-span-4 flex flex-col">
+                  <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">BASIC ENERGY</div>
+                  <div className="flex flex-col gap-2 mb-8">
+                    <div className="flex border border-[#8c7f73] bg-[#12161f] h-14">
+                      <div className="bg-[#e3d0b3] text-[#1c222e] w-14 flex items-center justify-center font-bold text-lg relative">
+                        <div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-6"></div> AE
+                      </div>
+                      <div className="flex-1 flex items-center px-6 text-[#e3d0b3] text-2xl font-bold">{arenaData.license.ae}</div>
+                    </div>
+                    <div className="flex border border-[#8c7f73] bg-[#12161f] h-14 justify-end">
+                      <div className="flex-1 flex items-center px-6 text-[#e3d0b3] text-2xl font-bold justify-end">{arenaData.license.vp}</div>
+                      <div className="bg-[#e3d0b3] text-[#1c222e] w-14 flex items-center justify-center font-bold text-lg relative">
+                        <div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-6"></div> VP
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">COMBAT STYLE</div>
+                  <div className="grid grid-cols-2 gap-2 mb-8">
+                    <div className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
+                      <span className="text-[#e3d0b3] text-[10px] font-bold">SPELLCRAFT</span>
+                      <div className={`w-5 h-5 ${arenaData.license.combatStyle?.spellcraft === true ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[10px] font-bold rounded-sm`}>
+                        {arenaData.license.combatStyle?.spellcraft === true ? '✓' : '🔒'}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
+                      <span className="text-[#e3d0b3] text-[10px] font-bold">ARMAMENT</span>
+                      <div className={`w-5 h-5 ${arenaData.license.combatStyle?.armament === true ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[10px] font-bold rounded-sm`}>
+                        {arenaData.license.combatStyle?.armament === true ? '✓' : '🔒'}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
+                      <span className="text-[#e3d0b3] text-[10px] font-bold">ALCHEMIA</span>
+                      <div className={`w-5 h-5 ${arenaData.license.combatStyle?.alchemia === true ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[10px] font-bold rounded-sm`}>
+                        {arenaData.license.combatStyle?.alchemia === true ? '✓' : '✕'}
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
+                      <span className="text-[#e3d0b3] text-[10px] font-bold">RELICIUM</span>
+                      <div className={`w-5 h-5 ${arenaData.license.combatStyle?.relicium === true ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[10px] font-bold rounded-sm`}>
+                        {arenaData.license.combatStyle?.relicium === true ? '✓' : '✕'}
+                      </div>
+                    </div>
+                    <div className="col-span-2 flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
+                      <span className="text-[#e3d0b3] text-[10px] font-bold">COMBINATION</span>
+                      <div className={`w-5 h-5 ${arenaData.license.combatStyle?.combination === true ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[10px] font-bold rounded-sm`}>
+                        {arenaData.license.combatStyle?.combination === true ? '✓' : '🔒'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">COMBAT STATISTICS</div>
+                  <div className="space-y-4 mb-8">
+                    {['win', 'draw', 'lose'].map((label) => {
+                      const val = arenaData.license.stats?.[label] || 0;
+                      const color = label === 'win' ? '#e3d0b3' : label === 'lose' ? '#85200c' : '#8c7f73';
+                      return (
+                        <div key={label}>
+                          <div className="flex justify-between text-[10px] text-[#8c7f73] font-bold mb-1">
+                            <div className="flex items-center gap-2">
+                              <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }}></div>
+                              {label.toUpperCase()}
+                            </div>
+                            <span>{val}%</span>
+                          </div>
+                          <div className="w-full h-2 bg-[#12161f] border border-[#8c7f73] border-dashed">
+                            <div className="h-full" style={{ width: `${val}%`, backgroundColor: color }}></div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div className="text-center text-[10px] text-[#8c7f73] border-t border-[#8c7f73] border-dashed pt-2 mb-6">TOTAL: {arenaData.license.totalDuel} DUEL</div>
+
+                  <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">TURN SECTION</div>
+                  <div className="border border-[#8c7f73] bg-[#12161f] p-4 relative mt-2">
+                    <div className="absolute top-[30px] left-[10%] right-[10%] h-[1px] bg-[#8c7f73] z-0"></div>
+                    <div className="flex justify-between items-start relative z-10">
+                      {[1,2,3].map((num) => {
+                        const isCurrent = duelData.duelNumber === num || num === 2;
+                        const isDone = num < 2;
+                        return (
+                          <div key={num} className="flex flex-col items-center w-1/3">
+                            <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold mb-2 bg-[#12161f] ${isCurrent ? 'border-[#e3d0b3] text-[#e3d0b3]' : 'border-[#8c7f73] text-[#8c7f73]'}`}>
+                              {isDone ? '✓' : num}
+                            </div>
+                            <div className="text-[10px] text-[#e3d0b3] font-bold mb-1">DUEL {num}</div>
+                            <div className="text-[8px] text-[#8c7f73] text-center uppercase whitespace-nowrap">Lawan mulai duluan</div>
+                            <div className={`text-[8px] mt-1 font-bold ${isCurrent ? 'text-[#e3d0b3]' : 'text-[#85200c]'}`}>
+                              {isDone ? 'SELESAI' : isCurrent ? 'BERJALAN' : 'BELUM MULAI'}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* KOLOM 3: STYLE BADGE + DECK LIST */}
+                <div className="lg:col-span-4 flex flex-col">
+                  <div className="w-full flex justify-end mb-4">
+                    <div className="bg-[#f4e8d3] text-[#1c222e] text-center font-bold py-2 px-8 relative" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 15px 100%, 0 calc(100% - 15px))' }}>
+                      <span className="text-sm tracking-widest">
+                        {arenaData.duel[arenaData.myRole.toLowerCase()].style?.toUpperCase() || 'SPELLCRAFT'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="text-[#8c7f73] text-[10px] font-bold text-right mb-3">
+                    {selectedMaterials.length || (duelData[arenaData.myRole.toLowerCase()].deck || []).length} / {TIER_DECK_LIMIT[arenaData.license.tier] || 5} MATERIAL (DECK TERKUNCI)
+                  </div>
+
+                  <div className="flex flex-col gap-1 relative border-l-2 border-[#8c7f73] pl-2">
+                    {(duelData[arenaData.myRole.toLowerCase()].deck || []).map((matName, i) => {
+                      const mat = materialsList.find(m => m.name === matName);
+                      if (!mat) return null;
+
+                      let tagClr = 'bg-[#85200c] text-[#e3d0b3]';
+                      if (mat.format.toLowerCase().includes('def')) tagClr = 'bg-[#e3d0b3] text-[#1c222e]';
+                      if (mat.format.toLowerCase().includes('regen')) tagClr = 'border border-[#8c7f73] text-[#e3d0b3] bg-transparent';
+
+                      return (
+                        <div key={i} className="flex justify-between items-center border border-[#8c7f73] bg-[#12161f] p-2">
+                          <span className="text-[#e3d0b3] text-xs font-bold flex-1">{mat.name}</span>
+                          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-sm mr-2 ${tagClr}`}>
+                            {mat.format.substring(0,3).toUpperCase()}
+                          </span>
+                          <div className="w-5 h-5 bg-[#e3d0b3] flex items-center justify-center rounded-sm">
+                            <svg className="w-3 h-3 text-[#1c222e]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {[...Array(Math.max(0, (TIER_DECK_LIMIT[arenaData.license.tier] || 5) - (duelData[arenaData.myRole.toLowerCase()].deck || []).length))].map((_, i) => (
+                      <div key={`empty-${i}`} className="flex justify-between items-center border border-[#5a5650] bg-[#12161f] p-2 opacity-50">
+                        <span className="text-[#5a5650] text-xs font-bold italic">Slot Terkunci</span>
+                        <span className="text-[#5a5650] text-[8px] font-bold px-1.5 py-0.5">🔒</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="text-center text-[9px] text-[#85200c] font-bold tracking-[0.3em] mt-6 flex items-center justify-center gap-2">
+                    <span>◆</span> SIAP BERTARUNG <span>◆</span>
+                  </div>
+                </div>
               </div>
-              
+
+              {/* Footer tanggal */}
+              <div className="mt-10 pt-4 border-t border-[#8c7f73] border-dashed flex justify-between text-[10px] text-[#8c7f73] tracking-widest relative z-10">
+                <span>DIPERBARUI: {new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})} WIB (GMT+7)</span>
+              </div>
             </div>
           </div>
         </div>
-      )}
+
+        {/* Tombol Download di bawah Pre-Combat */}
+        <div className="mt-4 md:mt-8 mb-4 shrink-0">
+          <button
+            onClick={downloadMatchData}
+            disabled={isDownloading}
+            className="bg-[#1C2330] border-2 border-[#e3d0b3] text-[#e3d0b3] px-8 py-3 text-sm font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+            </svg>
+            {isDownloading ? 'MENYIMPAN...' : 'SIMPAN PRE-COMBAT'}
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+)}
 
       <Modal isOpen={modal.isOpen} onClose={() => setModal({ ...modal, isOpen: false })} message={modal.message} type={modal.type} />
     </div>

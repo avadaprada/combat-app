@@ -197,14 +197,10 @@ export default function DashboardPage() {
           <div className="w-full flex flex-col items-center">
             
             {/* ====== WRAPPER KARTU LISENSI (RESPONSIVE SCALE) ====== */}
-            <div className="w-full flex justify-center overflow-x-auto custom-scrollbar pb-4">
+            <div className="w-full flex flex-col justify-center items-center overflow-x-auto custom-scrollbar pb-4">
               
-              {/* 
-                Trik: origin-top + scale untuk mengecilkan tampilan di HP 
-                tanpa mengubah resolusi asli saat di-download (html2canvas)
-              */}
-              <div className="origin-top scale-[0.25] min-[390px]:scale-[0.3] sm:scale-[0.45] md:scale-100 h-[380px] min-[390px]:h-[450px] sm:h-[700px] md:h-auto shrink-0 flex justify-center">
-                
+              {/* Container ini mengecilkan tampilan dan memotong ruang kosongnya */}
+              <div className="shrink-0 flex justify-center origin-top scale-[0.25] min-[390px]:scale-[0.3] sm:scale-[0.45] md:scale-100 h-[380px] min-[390px]:h-[450px] sm:h-[700px] md:h-auto">
                 <div className="relative w-[1500px]">
                   
                   {/* AREA LISENSI */}
@@ -432,27 +428,28 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   </div>
-
-                  {/* TOMBOL DOWNLOAD (Posisi disesuaikan untuk HP) */}
-                  <div className="absolute bottom-2 right-2 md:bottom-10 md:right-20 z-30">
-                    <button 
-                      onClick={downloadImage} 
-                      disabled={isDownloading} 
-                      className="bg-[#1C2330] border-2 border-[#EDE2CF] text-[#EDE2CF] px-3 py-1.5 md:px-4 md:py-2.5 text-[10px] md:text-xs font-bold tracking-wider hover:bg-[#EDE2CF] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2 font-sans"
-                    >
-                      <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                      {isDownloading ? 'MENYIMPAN...' : 'SIMPAN GAMBAR'}
-                    </button>
-                  </div>
                 </div>
               </div>
+
+              {/* TOMBOL DOWNLOAD (Sekarang berada di luar area scale, sejajar dengan bawah kartu) */}
+              <div className="mt-2 md:mt-4 flex justify-end w-full max-w-[1500px] px-4 md:px-0">
+                <button 
+                  onClick={downloadImage} 
+                  disabled={isDownloading} 
+                  className="bg-[#1C2330] border border-[#EDE2CF] md:border-2 text-[#EDE2CF] px-4 py-2 text-[10px] md:text-xs font-bold tracking-wider hover:bg-[#EDE2CF] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2 font-sans"
+                >
+                  <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                  {isDownloading ? 'MENYIMPAN...' : 'SIMPAN GAMBAR'}
+                </button>
+              </div>
+
             </div>
           </div>
         </>
       )}
 
       {/* ===== MATERIAL LIBRARY DENGAN FILTER ===== */}
-      <div ref={materialLibRef} className="w-full max-w-[1500px] mt-12 md:mt-16 mb-20 px-2 md:px-4 flex flex-col items-center scroll-mt-24">
+      <div ref={materialLibRef} className="w-full max-w-[1500px] mt-8 md:mt-16 mb-20 px-2 md:px-4 flex flex-col items-center scroll-mt-24">
         
         {/* Header & Filter Bar */}
         <div className="w-full mb-6 md:mb-8">
@@ -555,7 +552,6 @@ export default function DashboardPage() {
                   zIndex,
                   transition: 'all 0.5s cubic-bezier(0.25, 1, 0.5, 1)'
                 }}
-                // Ukuran kartu lebih kecil di HP
                 className={`absolute w-[220px] sm:w-[260px] md:w-[300px] aspect-[3/4] border md:border-[3px] ${offset === 0 ? 'border-[#EDE2CF]' : 'border-[#998776]'} bg-[#1C2330] flex flex-col cursor-pointer group shadow-2xl ${brightness}`}
               >
                 <div className="relative w-full h-full overflow-hidden bg-[#1C2330]">

@@ -11,7 +11,6 @@ export default function MainLayout({ children }) {
           backgroundImage: "url('https://raw.githubusercontent.com/avadaprada/combat-console-repository/refs/heads/main/181eb6e774cb5bac2471182f57fb03a2.jpg')" 
         }}
       >
-        {/* Overlay gelap agar konten tetap terbaca jelas */}
         <div className="absolute inset-0 bg-[#1c222e]/90 backdrop-blur-[2px]"></div>
       </div>
 
@@ -27,10 +26,10 @@ export default function MainLayout({ children }) {
       <footer className="w-full mt-auto border-t border-[#8c7f73]/40 bg-[#12161f]/80 backdrop-blur-md pt-10 pb-6 px-4 relative z-10">
         <div className="max-w-[1250px] mx-auto flex flex-col items-center">
           
-          <div className="w-full flex flex-col md:flex-row justify-between items-center md:items-start gap-8 mb-10">
+          <div className="w-full flex flex-col md:flex-row justify-between items-center md:items-start gap-8 mb-10 text-center md:text-left">
             
             {/* Brand Kiri */}
-            <div className="flex flex-col">
+            <div className="flex flex-col items-center md:items-start">
               <span className="text-[#e3d0b3] font-bold tracking-widest text-lg">COMBAT OFFICE</span>
               <span className="text-[#8c7f73] text-xs tracking-widest mt-1">そよ風の茶会</span>
             </div>

@@ -1140,29 +1140,27 @@ export default function ArenaPage() {
       {showMatchData && arenaData && duelData && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm overflow-hidden">
           
-          {/* Modal Container */}
-          <div className="bg-[#1c222e] border border-[#8c7f73] w-full max-w-[1600px] h-[90vh] md:h-auto md:max-h-[90vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
+          {/* Modal Container (Max Width 1400px, Max Height 90vh) */}
+          <div className="bg-[#1c222e] border-2 border-[#8c7f73] w-full max-w-[1400px] h-auto max-h-[90vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
             
-            {/* Tombol Tutup (Absolute di pojok kanan atas modal) */}
-            <button 
-              onClick={() => setShowMatchData(false)} 
-              className="absolute top-2 right-2 md:top-4 md:right-4 z-[1000] bg-[#85200c] border border-[#e3d0b3] text-white px-3 py-1.5 md:px-4 md:py-2 rounded text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-colors shadow-lg flex items-center gap-1"
-            >
-              ✕ TUTUP
-            </button>
-
-            {/* Header Modal (Judul) */}
-            <div className="flex items-center p-3 md:p-4 border-b border-[#8c7f73] shrink-0 bg-[#12161f] pr-24 md:pr-32">
+            {/* Header Modal */}
+            <div className="flex justify-between items-center p-3 md:p-4 border-b border-[#8c7f73] shrink-0 bg-[#12161f]">
               <h3 className="text-[#e3d0b3] font-bold tracking-widest uppercase text-xs md:text-sm">
                 Pre-Combat Preview
               </h3>
+              <button 
+                onClick={() => setShowMatchData(false)} 
+                className="bg-[#85200c] border border-[#e3d0b3] text-white px-3 py-1.5 md:px-4 md:py-2 rounded text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-colors shadow-lg flex items-center gap-1"
+              >
+                ✕ TUTUP
+              </button>
             </div>
 
-            {/* Body Modal */}
-            <div className="flex-1 overflow-y-auto p-2 md:p-6 flex flex-col items-center custom-scrollbar">
+            {/* Body Modal (Scrollable) */}
+            <div className="flex-1 overflow-auto p-4 md:p-6 custom-scrollbar bg-[#0f141c]">
               
-              {/* WRAPPER SCROLL MANUAL (Kartu 1500px di HP) */}
-              <div className="w-full flex justify-start md:justify-center overflow-auto custom-scrollbar border border-[#8c7f73]/30 md:border-transparent p-2 md:p-0 bg-[#0f141c] md:bg-transparent">
+              {/* Wrapper agar kartu 1500px berada di tengah (desktop) atau bisa digeser (mobile) */}
+              <div className="w-full min-w-max flex justify-center pb-4">
                 
                 {/* ===== AREA KARTU (UKURAN DESKTOP 1500PX) ===== */}
                 <div ref={matchDataRef} className="relative w-[1500px] shrink-0 bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden">

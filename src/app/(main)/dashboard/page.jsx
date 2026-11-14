@@ -120,20 +120,30 @@ export default function DashboardPage() {
   const downloadImage = async () => {
     if (!cardRef.current) return
     setIsDownloading(true)
+    
+    // Ambil elemen pembungkus (wrapper) lisensi di layar HP
+    const wrapper = document.getElementById('mobile-scale-wrapper')
+    const originalClass = wrapper ? wrapper.className : ''
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 800))
+      // 1. HAPUS efek scale agar lisensi kembali ke ukuran asli 1500px
+      if (wrapper) {
+        wrapper.className = 'origin-top shrink-0 w-[1500px]'
+      }
+
+      // 2. Beri jeda sebentar agar browser selesai merender ukuran barunya
+      await new Promise(resolve => setTimeout(resolve, 300))
+
+      // 3. Eksekusi html2canvas
       const canvas = await html2canvas(cardRef.current, {
         scale: 2,
         backgroundColor: '#1C2330',
         useCORS: true,
         logging: false,
-        onclone: (clonedDoc) => {
-          const wrapper = clonedDoc.getElementById('mobile-scale-wrapper');
-          if (wrapper) {
-            wrapper.style.transform = 'none';
-          }
-        }
+        width: 1500,
+        windowWidth: 1500
       })
+      
       const link = document.createElement('a')
       link.download = `lisensi-${profile.id}.png`
       link.href = canvas.toDataURL('image/png')
@@ -141,6 +151,10 @@ export default function DashboardPage() {
     } catch (err) {
       alert('Gagal mengunduh gambar: ' + err.message)
     } finally {
+      // 4. KEMBALIKAN efek scale ke HP seperti semula
+      if (wrapper) {
+        wrapper.className = originalClass
+      }
       setIsDownloading(false)
     }
   }

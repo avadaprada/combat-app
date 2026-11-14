@@ -1138,35 +1138,36 @@ export default function ArenaPage() {
 
       {/* ================= MODAL PRE-COMBAT (DATA MATCH) ================= */}
       {showMatchData && arenaData && duelData && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm overflow-hidden">
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm overflow-hidden">
           
           {/* Modal Container */}
-          <div className="bg-[#1c222e] border border-[#8c7f73] w-full max-w-[1600px] h-[95vh] md:h-auto md:max-h-[95vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
+          <div className="bg-[#1c222e] border border-[#8c7f73] w-full max-w-[1600px] h-[85vh] md:h-auto md:max-h-[90vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
             
-            {/* Header Modal */}
-            <div className="flex justify-between items-center p-3 md:p-4 border-b border-[#8c7f73] shrink-0 bg-[#12161f]">
+            {/* Tombol Tutup (Absolute di pojok kanan atas modal) */}
+            <button 
+              onClick={() => setShowMatchData(false)} 
+              className="absolute top-2 right-2 md:top-4 md:right-4 z-[1000] bg-[#85200c] border border-[#e3d0b3] text-white px-3 py-1.5 md:px-4 md:py-2 rounded text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-colors shadow-lg flex items-center gap-1"
+            >
+              ✕ TUTUP
+            </button>
+
+            {/* Header Modal (Judul) */}
+            <div className="flex items-center p-3 md:p-4 border-b border-[#8c7f73] shrink-0 bg-[#12161f] pr-24 md:pr-32">
               <h3 className="text-[#e3d0b3] font-bold tracking-widest uppercase text-xs md:text-sm">
                 Pre-Combat Preview
               </h3>
-              <button 
-                onClick={() => setShowMatchData(false)} 
-                className="text-[#8c7f73] hover:text-white transition-colors bg-[#85200c]/20 hover:bg-[#85200c] border border-[#85200c] px-3 py-1 rounded text-xs font-bold uppercase tracking-widest"
-              >
-                ✕ Tutup
-              </button>
             </div>
 
             {/* Body Modal */}
-            <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar flex flex-col items-center">
+            <div className="flex-1 overflow-y-auto p-2 md:p-6 flex flex-col items-center custom-scrollbar">
               
               {/* 
-                WRAPPER UNTUK SCROLL MANUAL DI MOBILE
-                overflow-auto agar user bisa geser kartu di HP.
-                md:overflow-visible agar di desktop tampil normal.
+                WRAPPER SCROLL MANUAL
+                Memberikan scrollbar horizontal & vertikal untuk kartu besar di mobile
               */}
-              <div className="w-full flex justify-start md:justify-center overflow-auto md:overflow-visible pb-4 custom-scrollbar">
+              <div className="w-full flex justify-start md:justify-center overflow-auto custom-scrollbar border border-[#8c7f73]/30 md:border-transparent p-2 md:p-0 bg-[#0f141c] md:bg-transparent max-h-[75vh]">
                 
-                {/* AREA YANG AKAN DI-SCREENSHOT (Ukuran fix 1500px) */}
+                {/* AREA KARTU (Ukuran fix 1500px) */}
                 <div ref={matchDataRef} className="relative w-[1500px] shrink-0 bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden">
                   
                   {/* Ornamen Batang Diagonal Kiri */}
@@ -1233,10 +1234,10 @@ export default function ArenaPage() {
                       </div>
                     </div>
 
-                    {/* ===== GRID UTAMA (3 : 3 : 4) ===== */}
+                    {/* ===== GRID UTAMA (3 : 3 : 6) ===== */}
                     <div className="grid grid-cols-12 gap-8 relative z-10">
                       
-                      {/* KOLOM 1 (KIRI - 3/12) */}
+                      {/* KOLOM 1 (KIRI) */}
                       <div className="col-span-3 flex flex-col">
                         <div className="text-[#e3d0b3] font-bold text-xs mb-3 tracking-widest">SUMMON SECTION</div>
                         
@@ -1308,15 +1309,16 @@ export default function ArenaPage() {
                           })}
                         </div>
 
-                        <div className="mt-auto flex flex-col items-center w-full">
-                          <svg className="w-[80%] h-10 mb-2 opacity-80" preserveAspectRatio="none" viewBox="0 0 100 20">
+                        {/* Barcode & Logo Ministry (Diperkecil) */}
+                        <div className="mt-auto flex flex-col items-center w-full pt-4">
+                          <svg className="w-[60%] h-6 mb-3 opacity-80" preserveAspectRatio="none" viewBox="0 0 100 20">
                             {[...Array(40)].map((_, i) => (
                               <rect key={i} x={i * 2.5} y="0" width={i % 3 === 0 ? "1.5" : "0.8"} height="20" fill="#e3d0b3" />
                             ))}
                           </svg>
                           <div className="flex items-center gap-2">
-                            <img src={LOGO_MINISTRY} className="w-6 h-6 object-contain" alt="Seal" crossOrigin="anonymous" />
-                            <div className="text-[8px] font-bold tracking-widest text-[#8c7f73] text-center">
+                            <img src={LOGO_MINISTRY} className="w-5 h-5 object-contain" alt="Seal" crossOrigin="anonymous" />
+                            <div className="text-[7px] font-bold tracking-widest text-[#8c7f73] text-center leading-tight">
                               <div>JAPANESE MINISTRY OF MAGIC</div>
                               <div>COMBAT OFFICE ©2026</div>
                             </div>
@@ -1324,7 +1326,7 @@ export default function ArenaPage() {
                         </div>
                       </div>
 
-                      {/* KOLOM 2 (TENGAH - 3/12) */}
+                      {/* KOLOM 2 (TENGAH) */}
                       <div className="col-span-3 flex flex-col">
                         <div className="text-[#e3d0b3] font-bold text-xs mb-3 tracking-widest">BASIC ENERGY</div>
                         <div className="flex flex-col gap-2 mb-8">
@@ -1420,12 +1422,11 @@ export default function ArenaPage() {
                               )
                             })}
                           </div>
-                          {/* Titik merah ornamen bawah turn section */}
                           <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-[#85200c] rotate-45"></div>
                         </div>
                       </div>
 
-                      {/* KOLOM 3 (KANAN - 6/12) */}
+                      {/* KOLOM 3 (KANAN) */}
                       <div className="col-span-6 flex flex-col pl-4 border-l border-[#8c7f73]/30">
                         <div className="w-full flex justify-center mb-6">
                           <div className="bg-[#f4e8d3] text-[#1c222e] text-center font-bold py-2 px-8 relative w-[80%]" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 15px 100%, 0 calc(100% - 15px))' }}>
@@ -1486,8 +1487,8 @@ export default function ArenaPage() {
                 </div>
               </div>
 
-              {/* Tombol Download */}
-              <div className="mt-4 md:mt-8 mb-4 shrink-0">
+              {/* Tombol Download (Diletakkan di luar wrapper scroll agar selalu terlihat di bawah) */}
+              <div className="mt-4 md:mt-6 mb-2 shrink-0">
                 <button 
                   onClick={downloadMatchData} 
                   disabled={isDownloading} 

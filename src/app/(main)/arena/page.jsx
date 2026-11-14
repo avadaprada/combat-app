@@ -22,7 +22,6 @@ export default function ArenaPage() {
   const [selectedStyle, setSelectedStyle] = useState('')
   const [selectedMaterials, setSelectedMaterials] = useState([])
   
-  // State untuk Carousel Deck Builder
   const [activeDeckCardIndex, setActiveDeckCardIndex] = useState(0)
 
   const [duelData, setDuelData] = useState(null)
@@ -436,14 +435,20 @@ export default function ArenaPage() {
     container.scrollTop = container.scrollHeight;
   }, [duelData?.log])
 
-  // Filter Material untuk Deck Builder (Diperbaiki agar huruf besar/kecil tidak jadi masalah)
+  // Filter Material untuk Deck Builder (Sangat aman terhadap spasi & huruf besar/kecil)
   const filteredDeckMaterials = materialsList.filter(m => {
-    const matchStyle = m.type.toLowerCase() === selectedStyle;
-    const userTier = (arenaData?.license?.tier || '').toLowerCase();
-    const matTier = (m.tier || '').toLowerCase();
+    const typeKey = (m.type || '').trim().toLowerCase();
+    const matchStyle = typeKey === (selectedStyle || '').trim().toLowerCase();
+    
+    const userTier = (arenaData?.license?.tier || '').trim().toLowerCase();
+    const matTier = (m.tier || '').trim().toLowerCase();
+    
     const userTierIndex = TIER_ORDER.findIndex(t => t.toLowerCase() === userTier);
     const matTierIndex = TIER_ORDER.findIndex(t => t.toLowerCase() === matTier);
-    const matchTier = matTierIndex !== -1 && matTierIndex <= userTierIndex;
+    
+    // Jika tier user tidak ditemukan, tampilkan material agar tidak kosong melompong
+    const matchTier = (userTierIndex !== -1 && matTierIndex !== -1) ? (matTierIndex <= userTierIndex) : true;
+    
     return matchStyle && matchTier;
   });
 
@@ -553,10 +558,9 @@ export default function ArenaPage() {
                       // Area Carousel 3D
                       <div 
                         className="relative w-full h-[320px] md:h-[400px] flex justify-center items-center mt-2"
-                        style={{ perspective: '1200px' }} // <-- Perbaikan Safari/HP
+                        style={{ perspective: '1200px' }}
                       >
                         
-                        {/* Tombol Kiri */}
                         <button 
                           onClick={() => { if (activeDeckCardIndex > 0) setActiveDeckCardIndex(activeDeckCardIndex - 1); }}
                           disabled={activeDeckCardIndex === 0}
@@ -565,7 +569,7 @@ export default function ArenaPage() {
                           <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
                         </button>
 
-                        {/* Kartu-kartu Material */}
+                        {/* Kartu-kartu Material (Dengan inset-0 m-auto agar selalu di tengah) */}
                         {filteredDeckMaterials.map((mat, index) => {
                           const offset = index - activeDeckCardIndex;
                           if (Math.abs(offset) > 2) return null;
@@ -601,9 +605,8 @@ export default function ArenaPage() {
                                 zIndex,
                                 transition: 'all 0.4s cubic-bezier(0.25, 1, 0.5, 1)'
                               }}
-                              className={`absolute w-[200px] md:w-[240px] h-[280px] md:h-[340px] border-[2px] md:border-[3px] ${offset === 0 ? (isSelected ? 'border-[#4a7c59]' : 'border-[#EDE2CF]') : 'border-[#998776]'} bg-[#12161f] flex flex-col cursor-pointer shadow-2xl ${brightness} rounded-lg overflow-hidden`}
+                              className={`absolute inset-0 m-auto w-[200px] md:w-[240px] h-[280px] md:h-[340px] border-[2px] md:border-[3px] ${offset === 0 ? (isSelected ? 'border-[#4a7c59]' : 'border-[#EDE2CF]') : 'border-[#998776]'} bg-[#12161f] flex flex-col cursor-pointer shadow-2xl ${brightness} rounded-lg overflow-hidden`}
                             >
-                              {/* Visual Kartu */}
                               <div className="relative w-full h-[65%] border-b border-[#998776]/50 overflow-hidden bg-[#1C2330]">
                                 {mat.photoUrl ? (
                                   <img src={mat.photoUrl} alt={mat.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
@@ -624,7 +627,6 @@ export default function ArenaPage() {
                                 )}
                               </div>
 
-                              {/* Info Kartu */}
                               <div className="p-3 flex-1 flex flex-col justify-between bg-[#12161f]">
                                 <div>
                                   <div className="flex justify-between items-start">
@@ -650,7 +652,6 @@ export default function ArenaPage() {
                           )
                         })}
 
-                        {/* Tombol Kanan */}
                         <button 
                           onClick={() => { if (activeDeckCardIndex < filteredDeckMaterials.length - 1) setActiveDeckCardIndex(activeDeckCardIndex + 1); }}
                           disabled={activeDeckCardIndex === filteredDeckMaterials.length - 1 || filteredDeckMaterials.length === 0}

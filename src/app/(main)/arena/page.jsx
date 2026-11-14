@@ -22,10 +22,12 @@ export default function ArenaPage() {
   const [selectedStyle, setSelectedStyle] = useState('')
   const [selectedMaterials, setSelectedMaterials] = useState([])
   
+  // State untuk Carousel Deck Builder
+  const [activeDeckCardIndex, setActiveDeckCardIndex] = useState(0)
+
   const [duelData, setDuelData] = useState(null)
   const pollTimerRef = useRef(null)
   
-  const logEndRef = useRef(null)
   const logContainerRef = useRef(null)
   const matchDataRef = useRef(null)
   const resultRef = useRef(null)
@@ -271,7 +273,6 @@ export default function ArenaPage() {
     }
   }
 
-  // ================= DOWNLOAD HASIL =================
   const downloadResultImage = async () => {
     if (!resultRef.current) return;
     setIsDownloadingResult(true);
@@ -284,12 +285,7 @@ export default function ArenaPage() {
       await new Promise(resolve => setTimeout(resolve, 300));
       
       const canvas = await html2canvas(resultRef.current, {
-        scale: 2,
-        backgroundColor: '#1C2330',
-        useCORS: true,
-        logging: false,
-        width: 1250,
-        windowWidth: 1250
+        scale: 2, backgroundColor: '#1C2330', useCORS: true, logging: false, width: 1250, windowWidth: 1250
       });
       const link = document.createElement('a');
       link.download = `duel-result-${arenaData.license.id}.png`;
@@ -358,7 +354,6 @@ export default function ArenaPage() {
     }
   };
 
-  // ================= HELPER =================
   const generateCombatFormat = (entry) => {
     const isFainted = entry.format === 'fainted' || (entry.vpAfter !== undefined && entry.vpAfter <= 0 && entry.dmgVp > 0) || (entry.note && entry.note.includes('PINGSAN'));
     if (isFainted) return `TURN ${entry.turn}\n\n${entry.aeBefore}AE / ${entry.vpBefore}VP\n\nFAINTED: VP telah habis, tidak bisa melanjutkan duel\n\n${entry.aeAfter}AE / ${entry.vpAfter}VP`;
@@ -412,7 +407,6 @@ export default function ArenaPage() {
 
   const { exp: estExp, cp: estCp } = calculateExpCp();
 
-  // ================= POLLING & SCROLL =================
   useEffect(() => {
     if (view !== 'duel' || !arenaData?.duel?.duelKey) return
     const fetchDuelState = async () => {
@@ -437,13 +431,20 @@ export default function ArenaPage() {
   }, [view, arenaData])
 
   useEffect(() => {
-    if (!logContainerRef.current || !logEndRef.current) return;
+    if (!logContainerRef.current) return;
     const container = logContainerRef.current;
-    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
-    if (isNearBottom) logEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    container.scrollTop = container.scrollHeight;
   }, [duelData?.log])
 
-  // ================= RENDER =================
+  // Filter Material untuk Deck Builder
+  const filteredDeckMaterials = materialsList.filter(m => {
+    const matchStyle = m.type.toLowerCase() === selectedStyle;
+    const userTierIndex = TIER_ORDER.indexOf(arenaData?.license?.tier);
+    const matTierIndex = TIER_ORDER.indexOf(m.tier);
+    const matchTier = matTierIndex !== -1 && matTierIndex <= userTierIndex;
+    return matchStyle && matchTier;
+  });
+
   return (
     <div className="max-w-[1500px] mx-auto p-3 md:p-6">
       
@@ -472,7 +473,7 @@ export default function ArenaPage() {
         </>
       )}
 
-      {/* ================= 2. DECK BUILDER ================= */}
+      {/* ================= 2. DECK BUILDER (3D CAROUSEL) ================= */}
       {view === 'practitioner' && (
         <div>
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
@@ -481,14 +482,15 @@ export default function ArenaPage() {
             </button>
             <h2 className="text-[#e3d0b3] font-bold tracking-[3px] uppercase text-sm md:text-base">Persiapan Duel</h2>
           </div>
+          
           {loading && <div className="text-center py-20 text-[#e3d0b3] text-sm md:text-base">Menyelaraskan energi arena...</div>}
           {!loading && errorMsg && <div className="bg-red-900/50 border border-red-500 text-red-200 p-4 md:p-6 text-center text-sm md:text-base">{errorMsg}</div>}
 
           {!loading && arenaData && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+            <div className="flex flex-col lg:flex-row gap-4 md:gap-6">
               
-              {/* Profil Lawan & Kamu (Disembunyikan VS-nya di HP agar hemat tempat) */}
-              <div className="lg:col-span-1 flex flex-row lg:flex-col justify-between lg:justify-start gap-2 lg:gap-4">
+              {/* Profil Kamu vs Lawan */}
+              <div className="lg:w-[350px] flex flex-row lg:flex-col justify-between lg:justify-start gap-2 lg:gap-4 shrink-0">
                 <div className="flex-1 border border-[#8c7f73] p-3 md:p-6 bg-[#1c222e] text-center">
                   <div className="text-[8px] md:text-[10px] text-[#8c7f73] tracking-widest mb-1 md:mb-2">KAMU</div>
                   <img src={arenaData.license.photoUrl} alt="Kamu" className="w-16 h-16 md:w-24 md:h-24 mx-auto rounded-full border-2 border-[#e3d0b3] object-cover mb-2 md:mb-4" crossOrigin="anonymous" />
@@ -507,11 +509,11 @@ export default function ArenaPage() {
                 </div>
               </div>
 
-              {/* Pemilihan Material */}
-              <div className="lg:col-span-2 border border-[#8c7f73] p-4 md:p-6 bg-[#1c222e]">
+              {/* Pemilihan Material (3D Carousel) */}
+              <div className="flex-1 border border-[#8c7f73] p-4 md:p-6 bg-[#1c222e] flex flex-col overflow-hidden">
                 <h3 className="text-[#e3d0b3] font-bold text-base md:text-lg mb-3 md:mb-4 border-b border-[#8c7f73] pb-2">Susun Deck Material</h3>
                 
-                <div className="mb-4 md:mb-6">
+                <div className="mb-4">
                   <div className="text-[#8c7f73] text-[10px] md:text-xs mb-2">1. Pilih Combat Style</div>
                   <div className="flex flex-wrap gap-1.5 md:gap-2">
                     {Object.entries(arenaData.license.combatStyle).map(([style, state]) => {
@@ -519,7 +521,12 @@ export default function ArenaPage() {
                       const isUnlocked = state === true;
                       return (
                         <button 
-                          key={style} disabled={!isUnlocked} onClick={() => { setSelectedStyle(style); setSelectedMaterials([]); }}
+                          key={style} disabled={!isUnlocked} 
+                          onClick={() => { 
+                            setSelectedStyle(style); 
+                            setSelectedMaterials([]); 
+                            setActiveDeckCardIndex(0); 
+                          }}
                           className={`px-3 py-1.5 md:px-4 md:py-2 text-[10px] md:text-xs font-bold uppercase tracking-wider border transition-colors ${selectedStyle === style ? 'bg-[#e3d0b3] text-[#1c222e] border-[#e3d0b3]' : isUnlocked ? 'bg-transparent text-[#e3d0b3] border-[#8c7f73] hover:border-[#e3d0b3]' : 'bg-transparent text-[#5a5650] border-[#5a5650] cursor-not-allowed'}`}
                         >
                           {style}
@@ -529,57 +536,128 @@ export default function ArenaPage() {
                   </div>
                 </div>
 
-                <div>
+                <div className="flex-1 flex flex-col">
                   <div className="text-[#8c7f73] text-[10px] md:text-xs mb-2 flex justify-between">
                     <span>2. Pilih Material (Maks: {TIER_DECK_LIMIT[arenaData.license.tier] || 5})</span>
                     <span className="text-[#e3d0b3] font-bold">{selectedMaterials.length} terpilih</span>
                   </div>
                   
                   {!selectedStyle ? (
-                    <div className="text-center text-[#8c7f73] py-8 border border-dashed border-[#8c7f73] text-xs md:text-sm">Pilih style dulu.</div>
+                    <div className="text-center text-[#8c7f73] py-8 border border-dashed border-[#8c7f73] text-xs md:text-sm flex-1 flex items-center justify-center rounded">Pilih style dulu.</div>
                   ) : (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 md:gap-3 max-h-[300px] md:max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                      {materialsList.filter(m => {
-                        const matchStyle = m.type.toLowerCase() === selectedStyle;
-                        const userTierIndex = TIER_ORDER.indexOf(arenaData.license.tier);
-                        const matTierIndex = TIER_ORDER.indexOf(m.tier);
-                        const matchTier = matTierIndex !== -1 && matTierIndex <= userTierIndex;
-                        return matchStyle && matchTier;
-                      }).map(mat => {
+                    // Area Carousel 3D
+                    <div className="relative w-full h-[320px] md:h-[400px] flex justify-center items-center perspective-[1200px] overflow-hidden mt-2">
+                      
+                      {/* Tombol Kiri */}
+                      <button 
+                        onClick={() => { if (activeDeckCardIndex > 0) setActiveDeckCardIndex(activeDeckCardIndex - 1); }}
+                        disabled={activeDeckCardIndex === 0}
+                        className="absolute left-1 md:left-4 z-50 bg-[#1C2330] border border-[#998776] md:border-2 text-[#e3d0b3] w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xl"
+                      >
+                        <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+                      </button>
+
+                      {/* Kartu-kartu Material */}
+                      {filteredDeckMaterials.map((mat, index) => {
+                        const offset = index - activeDeckCardIndex;
+                        if (Math.abs(offset) > 2) return null;
+
                         const isSelected = selectedMaterials.includes(mat.name);
                         const isExclusive = mat.exclusive === true;
                         const hasAccess = isExclusive ? (arenaData.license.materialBuffs && arenaData.license.materialBuffs[mat.name]) : true;
+
+                        let translateX = '0%';
+                        let rotateZ = '0deg';
+                        let scale = '1';
+                        let zIndex = '30';
+                        let brightness = 'brightness-100';
+
+                        if (offset === -1) { translateX = '-60%'; rotateZ = '-10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
+                        else if (offset === -2) { translateX = '-110%'; rotateZ = '-20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
+                        else if (offset === 1) { translateX = '60%'; rotateZ = '10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
+                        else if (offset === 2) { translateX = '110%'; rotateZ = '20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
 
                         return (
                           <div 
                             key={mat.name} 
                             onClick={() => {
-                              if (!hasAccess) return setModal({ isOpen: true, message: 'Material ini terkunci.', type: 'error' });
-                              toggleMaterial(mat.name);
+                              if (offset !== 0) {
+                                setActiveDeckCardIndex(index);
+                              } else {
+                                if (!hasAccess) return setModal({ isOpen: true, message: 'Material ini terkunci.', type: 'error' });
+                                toggleMaterial(mat.name);
+                              }
                             }}
-                            className={`cursor-pointer border p-1.5 md:p-2 flex flex-col relative transition-all ${!hasAccess ? 'border-[#5a5650] bg-[#12161f] opacity-60 cursor-not-allowed' : isSelected ? 'border-[#e3d0b3] bg-[#e3d0b3]/10' : 'border-[#8c7f73] hover:border-[#e3d0b3] bg-[#12161f]'}`}
+                            style={{ 
+                              transform: `translateX(${translateX}) rotateZ(${rotateZ}) scale(${scale})`,
+                              zIndex,
+                              transition: 'all 0.4s cubic-bezier(0.25, 1, 0.5, 1)'
+                            }}
+                            className={`absolute w-[200px] md:w-[240px] h-[280px] md:h-[340px] border-[2px] md:border-[3px] ${offset === 0 ? (isSelected ? 'border-[#4a7c59]' : 'border-[#EDE2CF]') : 'border-[#998776]'} bg-[#12161f] flex flex-col cursor-pointer shadow-2xl ${brightness} rounded-lg overflow-hidden`}
                           >
-                            <div className="flex justify-between items-start mb-1">
-                              <span className={`text-[10px] md:text-xs font-bold leading-tight ${hasAccess ? 'text-[#e3d0b3]' : 'text-[#8c7f73]'}`}>{mat.name}</span>
-                              {isSelected && <span className="text-[#e3d0b3] text-xs md:text-sm">✓</span>}
+                            {/* Visual Kartu */}
+                            <div className="relative w-full h-[65%] border-b border-[#998776]/50 overflow-hidden bg-[#1C2330]">
+                              {mat.photoUrl ? (
+                                <img src={mat.photoUrl} alt={mat.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-[#998776] text-xs">No Image</div>
+                              )}
+                              
+                              <div className="absolute top-2 left-2 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider bg-black/70 border border-[#998776] text-[#e3d0b3]">
+                                {mat.format}
+                              </div>
+
+                              {isSelected && offset === 0 && (
+                                <div className="absolute inset-0 bg-[#4a7c59]/30 flex items-center justify-center">
+                                  <div className="bg-[#4a7c59] text-white rounded-full p-2 border-2 border-white shadow-lg">
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            <div className="flex justify-between items-center mt-1">
-                              <span className="text-[#8c7f73] text-[8px] md:text-[10px] uppercase">{mat.format}</span>
-                              <span className="text-[#e3d0b3] text-[8px] md:text-[9px] font-bold bg-[#8c7f73]/20 px-1 rounded">{mat.tier}</span>
-                            </div>
-                            <div className="flex gap-1 mt-1 md:mt-2">
-                              <span className="text-[#e3d0b3] text-[8px] md:text-[10px] bg-[#1c222e] px-1 border border-[#8c7f73]">AE: {mat.aeCost}</span>
+
+                            {/* Info Kartu */}
+                            <div className="p-3 flex-1 flex flex-col justify-between bg-[#12161f]">
+                              <div>
+                                <div className="flex justify-between items-start">
+                                  <h4 className="text-[#e3d0b3] font-bold text-sm md:text-base leading-tight">{mat.name}</h4>
+                                  <span className="text-[#8c7f73] text-[9px] border border-[#8c7f73] px-1 rounded">{mat.tier}</span>
+                                </div>
+                                <div className="text-[#8c7f73] text-[9px] uppercase tracking-wider mt-1">{mat.element || mat.type}</div>
+                              </div>
+                              
+                              <div className="flex gap-2 mt-2">
+                                <div className="flex-1 text-center bg-[#1C2330] border border-[#8c7f73] text-[#e3d0b3] text-xs font-bold py-1">
+                                  AE: {mat.aeCost}
+                                </div>
+                              </div>
+                              
+                              {offset === 0 && (
+                                <button className={`w-full mt-2 py-1.5 text-[10px] font-bold uppercase tracking-widest border transition-colors ${!hasAccess ? 'bg-[#85200c] border-[#85200c] text-white cursor-not-allowed' : isSelected ? 'bg-[#4a7c59] border-[#4a7c59] text-white' : 'bg-[#e3d0b3] border-[#e3d0b3] text-[#1c222e]'}`}>
+                                  {!hasAccess ? 'Terkunci' : isSelected ? 'Batal Pilih' : 'Pilih Material'}
+                                </button>
+                              )}
                             </div>
                           </div>
                         )
                       })}
+
+                      {/* Tombol Kanan */}
+                      <button 
+                        onClick={() => { if (activeDeckCardIndex < filteredDeckMaterials.length - 1) setActiveDeckCardIndex(activeDeckCardIndex + 1); }}
+                        disabled={activeDeckCardIndex === filteredDeckMaterials.length - 1 || filteredDeckMaterials.length === 0}
+                        className="absolute right-1 md:right-4 z-50 bg-[#1C2330] border border-[#998776] md:border-2 text-[#e3d0b3] w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xl"
+                      >
+                        <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                      </button>
+
                     </div>
                   )}
                 </div>
 
-                <div className="mt-4 md:mt-6 pt-3 md:pt-4 border-t border-[#8c7f73]">
+                <div className="mt-4 pt-3 md:pt-4 border-t border-[#8c7f73]">
                   <button onClick={handleConfirmDeck} disabled={loading || selectedMaterials.length === 0} className="w-full bg-[#e3d0b3] text-[#1c222e] font-bold py-2 md:py-3 text-xs md:text-sm tracking-widest uppercase hover:bg-white transition-colors disabled:opacity-50">
-                    Konfirmasi Deck
+                    Konfirmasi Deck ({selectedMaterials.length} Kartu)
                   </button>
                 </div>
               </div>
@@ -592,7 +670,6 @@ export default function ArenaPage() {
       {view === 'duel' && duelData && (
         <div className="w-full h-[85dvh] md:h-[85vh] flex flex-col bg-[#12161f] border border-[#8c7f73] rounded-lg overflow-hidden relative shadow-2xl">
           
-          {/* Top Bar: Lawan */}
           <div className="bg-[#1c222e] p-2 md:p-3 border-b border-[#8c7f73] relative z-20 shadow-md">
             <div className="flex justify-between items-center mb-1 md:mb-2">
               <div className="flex items-center gap-2 md:gap-3">
@@ -602,14 +679,21 @@ export default function ArenaPage() {
                   <span className="text-[#8c7f73] text-[8px] md:text-[9px] uppercase tracking-widest">{arenaData.opponent.tier}</span>
                 </div>
               </div>
-              <div className="flex gap-2 md:gap-4 text-right">
-                <div>
-                  <div className="text-[8px] md:text-[9px] text-[#8c7f73] tracking-wider mb-0.5">VP</div>
-                  <div className="text-xs md:text-sm font-bold text-white leading-none">{duelData[arenaData.myRole === 'A' ? 'b' : 'a'].vp}</div>
-                </div>
-                <div>
-                  <div className="text-[8px] md:text-[9px] text-[#8c7f73] tracking-wider mb-0.5">AE</div>
-                  <div className="text-xs md:text-sm font-bold text-[#e3d0b3] leading-none">{duelData[arenaData.myRole === 'A' ? 'b' : 'a'].ae}</div>
+              
+              <div className="flex items-center gap-3 md:gap-4">
+                <button onClick={() => setShowMatchData(true)} className="bg-[#12161f] border border-[#e3d0b3] text-[#e3d0b3] px-2 py-1 md:px-3 md:py-1 text-[8px] md:text-[10px] uppercase font-bold tracking-widest hover:bg-[#e3d0b3] hover:text-[#1c222e] transition-colors rounded-sm shadow-sm">
+                  Pre-Combat
+                </button>
+                <div className="w-[1px] h-6 bg-[#8c7f73]/50 hidden md:block"></div>
+                <div className="flex gap-2 md:gap-4 text-right">
+                  <div>
+                    <div className="text-[8px] md:text-[9px] text-[#8c7f73] tracking-wider mb-0.5">VP</div>
+                    <div className="text-xs md:text-sm font-bold text-white leading-none">{duelData[arenaData.myRole === 'A' ? 'b' : 'a'].vp}</div>
+                  </div>
+                  <div>
+                    <div className="text-[8px] md:text-[9px] text-[#8c7f73] tracking-wider mb-0.5">AE</div>
+                    <div className="text-xs md:text-sm font-bold text-[#e3d0b3] leading-none">{duelData[arenaData.myRole === 'A' ? 'b' : 'a'].ae}</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -632,7 +716,6 @@ export default function ArenaPage() {
             </div>
           </div>
 
-          {/* Logs */}
           <div ref={logContainerRef} className="flex-1 overflow-y-auto p-2 md:p-4 flex flex-col gap-3 md:gap-5 custom-scrollbar bg-[#12161f]">
             {duelData.log && duelData.log.length > 0 ? (
               [...duelData.log].map((entry, idx) => {
@@ -707,16 +790,13 @@ export default function ArenaPage() {
                 Menyelaraskan energi pertarungan...
               </div>
             )}
-            <div ref={logEndRef} />
           </div>
 
-          {/* Bottom Control Panel */}
           <div className="bg-[#1c222e] border-t-2 border-[#e3d0b3] relative flex h-[180px] md:h-[180px] items-end">
             <div className={`absolute -top-3 md:-top-4 left-1/2 -translate-x-1/2 px-4 md:px-8 py-0.5 md:py-1 rounded-full border font-bold text-[8px] md:text-[10px] tracking-[0.2em] uppercase shadow-lg z-30 ${duelData.currentTurn === arenaData.myRole ? 'bg-[#e3d0b3] text-[#1c222e] border-white animate-pulse' : 'bg-[#12161f] text-[#85200c] border-[#85200c]'}`}>
                 {duelData.currentTurn === arenaData.myRole ? 'GILIRANMU' : 'MENUNGGU LAWAN...'}
             </div>
 
-            {/* Profil Kiri (Dikecilkan di HP) */}
             <div className="w-[100px] md:w-[220px] shrink-0 border-r border-[#8c7f73] p-1.5 md:p-3 flex flex-col justify-between h-full bg-[#12161f] z-10">
                <div className="flex items-center gap-1 md:gap-2">
                   <img src={arenaData.license.photoUrl} alt="Me" className="w-6 h-6 md:w-10 md:h-10 rounded-full border border-[#e3d0b3] object-cover bg-[#1c222e]" crossOrigin="anonymous"/>
@@ -741,11 +821,7 @@ export default function ArenaPage() {
                </div>
             </div>
 
-            {/* Kartu Deck */}
             <div className="flex-1 flex flex-col relative h-full z-10 bg-[#1c222e]">
-               <div className="absolute top-1 md:top-2 right-2 md:right-4 z-20">
-                 <button onClick={() => setShowMatchData(true)} className="bg-[#12161f] border border-[#e3d0b3] text-[#e3d0b3] px-2 py-1 md:px-3 md:py-1 text-[8px] md:text-[10px] uppercase font-bold tracking-widest hover:bg-[#e3d0b3] hover:text-[#1c222e] transition-colors rounded-sm shadow-md">Pre-Combat</button>
-               </div>
                <div className="flex-1 overflow-x-auto p-2 md:p-4 pt-6 md:pt-8 flex items-end gap-1.5 md:gap-2 custom-scrollbar">
                  {(duelData[arenaData.myRole === 'A' ? 'a' : 'b'].deck || []).map((matName, i) => {
                    const mat = materialsList.find(m => m.name === matName);
@@ -809,14 +885,12 @@ export default function ArenaPage() {
             .winner-text { animation: textShine 2s ease-in-out infinite; color: #ffffff !important; }
           `}</style>
 
-          {/* WRAPPER UNTUK SCALE MOBILE */}
           <div className="w-full flex justify-center overflow-x-auto custom-scrollbar pb-4 mt-2 md:mt-6">
             <div className="relative w-[1250px] h-[300px] min-[390px]:h-[350px] sm:h-[600px] md:h-auto flex justify-center md:block">
               
               <div id="result-scale-wrapper" className="origin-top scale-[0.25] min-[390px]:scale-[0.3] sm:scale-[0.45] md:scale-100 shrink-0">
                 <div ref={resultRef} className="relative w-[1250px] bg-[#1c222e] p-8 md:p-12 flex justify-center overflow-hidden">
                   
-                  {/* BINGKAI EMAS UTAMA */}
                   <div className="relative w-full bg-[#1c222e] border-[4px] border-[#e3d0b3] px-10 py-16 font-sans shadow-2xl">
                     
                     <div className="absolute top-0 left-0 w-24 h-12 border-r-[4px] border-b-[4px] border-[#1c222e] z-0 bg-[#e3d0b3] pointer-events-none"></div>
@@ -834,7 +908,6 @@ export default function ArenaPage() {
 
                     <div className="flex justify-center items-center gap-10 md:gap-20 px-4 mb-8">
                       
-                      {/* PEMAIN A */}
                       <div className={`flex flex-col items-center w-[40%] max-w-[300px] transition-all duration-500 ${duelData.winner !== 'draw' && duelData.winner !== 'A' ? 'opacity-60 grayscale-[30%]' : 'opacity-100'}`}>
                         <div className="relative mb-4">
                           {duelData.winner !== 'draw' && (
@@ -867,7 +940,6 @@ export default function ArenaPage() {
 
                       <div className="text-4xl font-bold text-[#85200c] italic text-center px-4 shrink-0">VS</div>
 
-                      {/* PEMAIN B */}
                       <div className={`flex flex-col items-center w-[40%] max-w-[300px] transition-all duration-500 ${duelData.winner !== 'draw' && duelData.winner !== 'B' ? 'opacity-60 grayscale-[30%]' : 'opacity-100'}`}>
                         <div className="relative mb-4">
                           {duelData.winner !== 'draw' && (
@@ -899,7 +971,6 @@ export default function ArenaPage() {
                       </div>
                     </div>
 
-                    {/* EXP BREAKDOWN */}
                     <div className="flex justify-between gap-20 md:gap-25 px-15 mt-8 font-mono">
                       <div className="flex-1 border border-[#8c7f73] bg-[#12161f] p-5 relative flex flex-col">
                         <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#e3d0b3]"></div>
@@ -947,7 +1018,6 @@ export default function ArenaPage() {
             </div>
           </div>
 
-          {/* Tombol Aksi */}
           <div className="flex flex-wrap justify-center gap-3 md:gap-4 mt-2 md:mt-6 mb-10 w-full max-w-[1250px]">
             <button onClick={downloadResultImage} disabled={isDownloadingResult} className="bg-[#1C2330] border border-[#e3d0b3] md:border-2 text-[#e3d0b3] px-4 py-2 md:px-6 md:py-2.5 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2">
               <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
@@ -970,15 +1040,15 @@ export default function ArenaPage() {
       {showMatchData && arenaData && duelData && (
         <div className="fixed inset-0 z-50 flex items-start justify-center p-2 md:p-4 bg-[#0a0d14] overflow-y-auto custom-scrollbar">
           
-          <div className="fixed top-2 right-2 md:top-6 md:right-12 z-[60] flex gap-2 md:gap-3">
-            <button onClick={downloadMatchData} disabled={isDownloading} className="bg-[#12161f] border border-[#e3d0b3] text-[#e3d0b3] px-3 py-1 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1c222e] transition-colors">
+          {/* Area Tombol Aksi (Diperbaiki: Di atas, flex, tidak menutupi kartu) */}
+          <div className="w-full max-w-[1500px] flex justify-end gap-2 md:gap-3 mb-4 sticky top-2 z-[60]">
+            <button onClick={downloadMatchData} disabled={isDownloading} className="bg-[#12161f] border border-[#e3d0b3] text-[#e3d0b3] px-4 py-2 text-xs font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1c222e] transition-colors shadow-lg">
               {isDownloading ? 'Menyimpan...' : 'Simpan Gambar'}
             </button>
-            <button onClick={() => setShowMatchData(false)} className="bg-[#85200c] border border-[#85200c] text-white px-3 py-1 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-colors">✕ TUTUP</button>
+            <button onClick={() => setShowMatchData(false)} className="bg-[#85200c] border border-[#85200c] text-white px-4 py-2 text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-colors shadow-lg">✕ TUTUP</button>
           </div>
 
-          {/* Wrapper Scale untuk Modal */}
-          <div className="w-full flex justify-center overflow-x-auto custom-scrollbar mt-12 md:mt-16">
+          <div className="w-full flex justify-center overflow-x-auto custom-scrollbar pb-8">
             <div className="relative w-[1500px] h-[350px] min-[390px]:h-[450px] sm:h-[800px] md:h-auto flex justify-center md:block">
               
               <div id="matchdata-scale-wrapper" className="origin-top scale-[0.22] min-[390px]:scale-[0.28] sm:scale-[0.45] md:scale-100 shrink-0">

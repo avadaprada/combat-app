@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import html2canvas from 'html2canvas-pro'
 import Barcode from 'react-barcode'
+import { useRouter } from 'next/navigation' // <-- TAMBAHAN BARU
 
 const TIER_COLORS = {
   shodan: { bg: '#B88B64', text: '#1C2330' },
@@ -18,7 +19,6 @@ const LOGO_MINISTRY = "https://raw.githubusercontent.com/avadaprada/combat-conso
 const BAKEMONO_IMG = "https://raw.githubusercontent.com/avadaprada/combat-console-repository/refs/heads/main/BAKEMONO%20PNG-BROWN.png"
 
 // ================= SVG COMPONENTS =================
-
 const DiamondColumn = () => (
   <div className="absolute top-1/2 -translate-y-1/2 left-14 flex gap-5 z-20">
     <div className="flex flex-col gap-13">
@@ -62,29 +62,39 @@ export default function DashboardPage() {
   
   const [activeStyleFilter, setActiveStyleFilter] = useState('spellcraft')
   const [tierFilter, setTierFilter] = useState('')
-  
   const [activeCardIndex, setActiveCardIndex] = useState(0)
   
   const supabase = createClient()
   const cardRef = useRef(null)
   const materialLibRef = useRef(null)
+  const router = useRouter() // <-- TAMBAHAN BARU
 
   useEffect(() => {
     async function loadData() {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) return
-
-      const combatId = user.email.split('@')[0].trim().toUpperCase()
-
       try {
-        const res = await fetch(`/api/profile?id=${combatId}`)
-        const result = await res.json()
+        // 1. Ambil user
+        const { data: { user } } = await supabase.auth.getUser()
+        
+        // 2. Jika tidak ada user, lempar ke login (jangan biarkan loading nyangkut)
+        if (!user) {
+          router.push('/login')
+          return
+        }
+
+        const combatId = user.email.split('@')[0].trim().toUpperCase()
+
+        // 3. Ambil data profil dan material secara paralel
+        const [profileRes, matRes] = await Promise.all([
+          fetch(`/api/profile?id=${combatId}`),
+          fetch('/api/materials')
+        ])
+
+        const result = await profileRes.json()
+        const matData = await matRes.json()
         
         if (result.success) {
           setProfile(result.data)
           
-          const matRes = await fetch('/api/materials')
-          const matData = await matRes.json()
           if (matData.success) {
             setMaterials(matData.data)
             
@@ -97,13 +107,15 @@ export default function DashboardPage() {
           setErrorMsg(result.message || 'Gagal memuat data dari Google Sheets.')
         }
       } catch (err) {
-        setErrorMsg('Terjadi kesalahan koneksi.')
+        console.error("Error:", err)
+        setErrorMsg('Terjadi kesalahan koneksi atau server timeout.')
       } finally {
+        // 4. APAPUN YANG TERJADI, MATIKAN LOADING
         setLoading(false)
       }
     }
     loadData()
-  }, [])
+  }, [router, supabase])
 
   const downloadImage = async () => {
     if (!cardRef.current) return
@@ -115,7 +127,6 @@ export default function DashboardPage() {
         backgroundColor: '#1C2330',
         useCORS: true,
         logging: false,
-        // Menghapus efek 'scale' sesaat sebelum gambar di-render agar tidak pecah
         onclone: (clonedDoc) => {
           const wrapper = clonedDoc.getElementById('mobile-scale-wrapper');
           if (wrapper) {
@@ -146,6 +157,19 @@ export default function DashboardPage() {
 
   if (loading) {
     return <div className="text-[#EDE2CF] flex items-center justify-center font-bold tracking-widest py-20 min-h-screen">MENYELARASKAN DATA...</div>
+  }
+
+  // Jika ada error tapi bukan karena belum login, tampilkan pesannya
+  if (errorMsg && !profile) {
+    return (
+      <div className="w-full max-w-[1500px] mx-auto p-4 py-20 min-h-screen">
+        <div className="bg-[#A52D17]/50 border border-[#A52D17] text-[#EDE2CF] p-6 text-center font-sans">
+          <h2 className="text-xl font-bold mb-2">Gagal Memuat Dashboard</h2>
+          <p>{errorMsg}</p>
+          <button onClick={() => window.location.reload()} className="mt-4 bg-[#EDE2CF] text-[#1C2330] px-4 py-2 font-bold">Coba Lagi</button>
+        </div>
+      </div>
+    )
   }
 
   const renderStyleBadge = (styleKey, state) => {
@@ -193,7 +217,8 @@ export default function DashboardPage() {
   return (
     <div className="max-w-full mx-auto p-4 md:py-8 flex flex-col items-center">
       
-      {errorMsg && (
+      {/* Tampilkan error di atas jika ada, tapi dashboard tetap muncul (misal data materials gagal) */}
+      {errorMsg && profile && (
         <div className="w-full max-w-[1500px] bg-[#A52D17]/50 border border-[#A52D17] text-[#EDE2CF] p-4 mb-6 font-sans">
           {errorMsg}
         </div>
@@ -203,22 +228,13 @@ export default function DashboardPage() {
         <>
           <div className="w-full flex flex-col items-center max-w-[1500px]">
             
-            {/* ====== WRAPPER KARTU LISENSI (HANYA UNTUK TAMPILAN) ====== */}
+            {/* ====== WRAPPER KARTU LISENSI ====== */}
             <div className="w-full flex justify-center overflow-x-auto custom-scrollbar pb-2">
-              
               <div className="relative w-[1500px] h-[300px] min-[390px]:h-[350px] sm:h-[550px] md:h-auto flex justify-center md:block">
-                
-                {/* Area yang diperkecil (scale) di HP */}
-                <div 
-                  id="mobile-scale-wrapper"
-                  className="origin-top scale-[0.25] min-[390px]:scale-[0.3] sm:scale-[0.45] md:scale-100 shrink-0"
-                >
-                  {/* AREA LISENSI ASLI (1500px) */}
+                <div id="mobile-scale-wrapper" className="origin-top scale-[0.25] min-[390px]:scale-[0.3] sm:scale-[0.45] md:scale-100 shrink-0">
+                  
                   <div ref={cardRef} className="relative w-[1500px] bg-[#1C2330] p-20 pl-32 flex justify-center overflow-hidden">
-                    
                     <DiamondColumn />
-
-                    {/* Bingkai Utama */}
                     <div className="relative w-full bg-[#1C2330] border-[4px] border-[#EDE2CF] p-10 z-10 flex flex-col font-sans">
                       
                       {/* Ornamen Sudut */}
@@ -226,17 +242,12 @@ export default function DashboardPage() {
                       <div className="absolute top-0 left-0 w-[4px] h-12 bg-[#EDE2CF] pointer-events-none"></div>
                       <div className="absolute top-[16px] left-[16px] w-4 h-[1px] bg-[#EDE2CF] pointer-events-none"></div>
                       <div className="absolute top-[16px] left-[16px] w-[1px] h-4 bg-[#EDE2CF] pointer-events-none"></div>
-
                       <div className="absolute top-0 right-0 w-18 h-[15px] bg-[#EDE2CF] pointer-events-none"></div>
                       <div className="absolute top-[25px] right-0 w-8 h-[1px] bg-[#EDE2CF] pointer-events-none"></div>
-
                       <div className="absolute bottom-0 left-0 w-[16px] h-18 bg-[#EDE2CF] pointer-events-none"></div>
                       <div className="absolute bottom-[25px] left-0 w-15 h-[1px] bg-[#EDE2CF] pointer-events-none"></div>
-
                       <div className="absolute bottom-0 right-0 w-18 h-[17px] bg-[#EDE2CF] pointer-events-none"></div>
                       <div className="absolute bottom-0 right-0 w-[15px] h-18 bg-[#EDE2CF] pointer-events-none"></div>
-
-                      {/* Ornamen Diagonal */}
                       <div className="absolute top-8 right-40 flex gap-1.5 z-20">
                         {[...Array(12)].map((_, i) => (
                           <div key={i} className="w-2.5 h-8 bg-[#998776] transform -skew-x-[30deg]"></div>
@@ -252,25 +263,19 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      {/* Topline (Personal Data, EXP, Tier) */}
+                      {/* Topline */}
                       <div className="flex flex-wrap items-center gap-4 mb-2 relative z-10 px-6">
-                        <div className="bg-[#EDE2CF] text-[#1C2330] font-bold text-sm px-5 py-2 uppercase tracking-wide">
-                          Personal Data Section
-                        </div>
+                        <div className="bg-[#EDE2CF] text-[#1C2330] font-bold text-sm px-5 py-2 uppercase tracking-wide">Personal Data Section</div>
                         <div className="flex-1 border-b-2 border-[#EDE2CF] h-0"></div>
                         <div className="text-right">
                           <div className="text-[#EDE2CF] text-[10px] font-bold tracking-widest">POINT</div>
                           <div className="text-[#EDE2CF] text-[10px] font-bold tracking-widest">SECTION</div>
                         </div>
-                        <div className="relative bg-[#1C2330] border border-[#998776] text-[#EDE2CF] font-bold px-5 py-2 text-sm">
-                          {profile.exp} EXP
-                        </div>
-                        <div className="relative font-bold text-2xl px-10 py-2 uppercase tracking-widest border-2 border-[#B88B64]" style={{ backgroundColor: tierBg, color: tierText }}>
-                          {profile.tier}
-                        </div>
+                        <div className="relative bg-[#1C2330] border border-[#998776] text-[#EDE2CF] font-bold px-5 py-2 text-sm">{profile.exp} EXP</div>
+                        <div className="relative font-bold text-2xl px-10 py-2 uppercase tracking-widest border-2 border-[#B88B64]" style={{ backgroundColor: tierBg, color: tierText }}>{profile.tier}</div>
                       </div>
 
-                      {/* EXP Progress Bar */}
+                      {/* EXP Progress */}
                       <div className="mb-8 w-full relative z-10 px-6 mt-4">
                         <div className="flex justify-between text-[10px] text-[#998776] mb-1 px-1 font-bold tracking-widest">
                           <span>{profile.tierProgress?.expToNext || 0} EXP LAGI KE {profile.tierProgress?.nextTier?.toUpperCase() || 'MAX'}</span>
@@ -285,13 +290,12 @@ export default function DashboardPage() {
                         </div>
                       </div>
 
-                      {/* MAIN CONTENT 3 COLUMNS */}
+                      {/* MAIN CONTENT */}
                       <div className="flex flex-row gap-10 relative z-10 px-6 items-stretch">
                         
-                        {/* KOLOM KIRI */}
+                        {/* KIRI */}
                         <div className="w-[35%] flex flex-col items-center">
                           <div className="w-full text-left text-[#EDE2CF] font-bold text-xl mb-3 tracking-widest uppercase">Summon Section</div>
-                          
                           <div className="relative w-full flex justify-center items-center mb-4 py-2">
                             <img src={BAKEMONO_IMG} alt="Bakemono" className="absolute -left-4 w-18 h-18 object-contain z-20 opacity-90" crossOrigin="anonymous"/>
                             <div className="relative w-62 h-62 flex items-center justify-center translate-x-8">
@@ -318,24 +322,21 @@ export default function DashboardPage() {
 
                           <div className="w-full flex gap-4 mt-2">
                             <div className="flex-1 border-2 border-[#998776] py-2 px-3 text-center relative bg-[#1C2330]">
-                              <SolidCornerAccent pos="tl" />
-                              <SolidCornerAccent pos="br" />
+                              <SolidCornerAccent pos="tl" /><SolidCornerAccent pos="br" />
                               <div className="text-[9px] text-[#998776] tracking-widest mb-1 uppercase">Combat Point</div>
                               <div className="text-[#EDE2CF] font-bold text-xl">{profile.cp}</div>
                             </div>
                             <div className="flex-1 border-2 border-[#998776] py-2 px-3 text-center relative bg-[#1C2330]">
-                              <SolidCornerAccent pos="tl" />
-                              <SolidCornerAccent pos="br" />
+                              <SolidCornerAccent pos="tl" /><SolidCornerAccent pos="br" />
                               <div className="text-[9px] text-[#998776] tracking-widest mb-1 uppercase">Gatcha Token</div>
                               <div className="text-[#EDE2CF] font-bold text-xl">{profile.gatchaToken}</div>
                             </div>
                           </div>
                         </div>
 
-                        {/* KOLOM TENGAH */}
+                        {/* TENGAH */}
                         <div className="w-[30%] flex flex-col">
                           <div className="text-[#EDE2CF] font-bold text-xl mb-5 tracking-widest uppercase">Basic Energy</div>
-                          
                           <div className="flex flex-col gap-6 mb-6 mt-1">
                             <div className="relative">
                               <RoundedDashedBracket pos="tl" className="-top-4 -left-4" />
@@ -383,7 +384,6 @@ export default function DashboardPage() {
                                   )
                                 })}
                               </div>
-                              
                               <div className="relative pt-3">
                                 <div className="border-t-2 border-[#998776] border-dashed mb-2"></div>
                                 <div className="text-center text-xs text-[#998776] tracking-widest uppercase">Total: {profile.totalDuel} Duel</div>
@@ -393,11 +393,10 @@ export default function DashboardPage() {
                           </div>
                         </div>
 
-                        {/* KOLOM KANAN */}
+                        {/* KANAN */}
                         <div className="w-[35%] flex flex-col">
                           <div className="text-[#EDE2CF] font-bold text-xl mb-1 tracking-widest uppercase">Combat Style</div>
                           <div className="text-[15px] text-[#998776] mb-3">Klik gaya combat untuk melihat material</div>
-                          
                           <div className="grid grid-cols-2 gap-2 mb-4">
                             {renderStyleBadge('spellcraft', profile.combatStyle?.spellcraft)}
                             {renderStyleBadge('armament', profile.combatStyle?.armament)}
@@ -407,18 +406,9 @@ export default function DashboardPage() {
                               {renderStyleBadge('combination', profile.combatStyle?.combination)}
                             </div>
                           </div>
-
                           <div className="mt-10 flex flex-col items-center">
                             <div className="bg-transparent w-full flex justify-center mb-5">
-                              <Barcode 
-                                value={profile.id} 
-                                width={3}
-                                height={50}
-                                displayValue={false}
-                                background="transparent"
-                                lineColor="#EDE2CF"
-                                margin={0}
-                              />
+                              <Barcode value={profile.id} width={3} height={50} displayValue={false} background="transparent" lineColor="#EDE2CF" margin={0} />
                             </div>
                             <div className="flex items-center gap-2 mt-1">
                               <img src={LOGO_MINISTRY} className="w-10 h-10 object-contain" alt="Seal" crossOrigin="anonymous" />
@@ -442,7 +432,7 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* TOMBOL DOWNLOAD (Berada di luar container scale, jadi selalu terlihat di layar HP) */}
+            {/* TOMBOL DOWNLOAD */}
             <div className="w-full flex justify-end mt-2 md:mt-4 px-2 md:px-0 z-30">
               <button 
                 onClick={downloadImage} 
@@ -458,10 +448,8 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* ===== MATERIAL LIBRARY DENGAN FILTER ===== */}
+      {/* MATERIAL LIBRARY */}
       <div ref={materialLibRef} className="w-full max-w-[1500px] mt-4 md:mt-12 mb-20 px-2 md:px-4 flex flex-col items-center scroll-mt-24">
-        
-        {/* Header & Filter Bar */}
         <div className="w-full mb-6 md:mb-8">
           <div className="flex items-center gap-4 mb-4 md:mb-6">
             <span className="text-[#EDE2CF] text-xs md:text-sm font-bold tracking-[3px] uppercase whitespace-nowrap font-sans">Material Library</span>
@@ -469,12 +457,10 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
-            {/* TABS: Combat Style Filter */}
             <div className="flex flex-wrap gap-1.5 md:gap-2">
               {['spellcraft', 'armament', 'alchemia', 'relicium', 'combination'].map((style) => {
                 const isUnlocked = profile?.combatStyle?.[style] === true;
                 const isActive = activeStyleFilter === style;
-                
                 return (
                   <button
                     key={style}
@@ -492,7 +478,6 @@ export default function DashboardPage() {
               })}
             </div>
 
-            {/* Dropdown: Tier Filter */}
             <div className="w-full md:w-auto">
               <select 
                 value={tierFilter}
@@ -515,9 +500,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 3D Carousel Container */}
         <div className="relative w-full h-[400px] md:h-[500px] flex justify-center items-center perspective-[1200px] overflow-hidden">
-          
           <button 
             onClick={() => { if (activeCardIndex > 0) setActiveCardIndex(activeCardIndex - 1); }}
             disabled={activeCardIndex === 0}
@@ -557,11 +540,7 @@ export default function DashboardPage() {
               <div 
                 key={index} 
                 onClick={() => setActiveCardIndex(index)}
-                style={{ 
-                  transform: `translateX(${translateX}) rotateZ(${rotateZ}) scale(${scale})`,
-                  zIndex,
-                  transition: 'all 0.5s cubic-bezier(0.25, 1, 0.5, 1)'
-                }}
+                style={{ transform: `translateX(${translateX}) rotateZ(${rotateZ}) scale(${scale})`, zIndex, transition: 'all 0.5s cubic-bezier(0.25, 1, 0.5, 1)' }}
                 className={`absolute w-[220px] sm:w-[260px] md:w-[300px] aspect-[3/4] border md:border-[3px] ${offset === 0 ? 'border-[#EDE2CF]' : 'border-[#998776]'} bg-[#1C2330] flex flex-col cursor-pointer group shadow-2xl ${brightness}`}
               >
                 <div className="relative w-full h-full overflow-hidden bg-[#1C2330]">
@@ -610,7 +589,6 @@ export default function DashboardPage() {
           </button>
         </div>
 
-        {/* Indikator Jumlah Kartu */}
         {filteredMaterials.length > 0 && (
           <div className="mt-4 md:mt-6 flex flex-wrap justify-center gap-1.5 md:gap-2 max-w-[600px]">
             {filteredMaterials.map((_, i) => (
@@ -619,7 +597,6 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
-
     </div>
   )
 }

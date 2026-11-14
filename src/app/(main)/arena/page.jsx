@@ -27,6 +27,9 @@ export default function ArenaPage() {
   // State untuk Carousel Live Duel (Dalam Pertarungan)
   const [activeDuelCardIndex, setActiveDuelCardIndex] = useState(0)
 
+  // STATE BARU: Untuk Modal Konfirmasi Pakai Material
+  const [confirmModal, setConfirmModal] = useState({ isOpen: false, materialName: '', material: null })
+
   const [duelData, setDuelData] = useState(null)
   const pollTimerRef = useRef(null)
   
@@ -828,7 +831,6 @@ export default function ArenaPage() {
             {/* KARTU DECK DUEL (3D CAROUSEL) */}
             <div className="flex-1 flex flex-col relative h-full z-10 bg-[#1c222e] overflow-hidden">
                
-               {/* Indikator posisi carousel (opsional) */}
                <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[8px] text-[#8c7f73] uppercase tracking-widest z-20 pointer-events-none">
                  Deck ({myDeckNames.length > 0 ? activeDuelCardIndex + 1 : 0}/{myDeckNames.length})
                </div>
@@ -837,7 +839,6 @@ export default function ArenaPage() {
                  className="flex-1 relative flex justify-center items-center mt-2"
                  style={{ perspective: '1000px' }}
                >
-                 {/* Tombol Kiri */}
                  <button 
                    onClick={() => { if (activeDuelCardIndex > 0) setActiveDuelCardIndex(activeDuelCardIndex - 1); }}
                    disabled={activeDuelCardIndex === 0}
@@ -846,7 +847,6 @@ export default function ArenaPage() {
                    <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
                  </button>
 
-                 {/* Looping Kartu */}
                  {myDeckNames.map((matName, index) => {
                    const mat = materialsList.find(m => m.name === matName);
                    if (!mat) return null;
@@ -869,7 +869,6 @@ export default function ArenaPage() {
                    if (mat.format.toLowerCase().includes('def')) borderClr = 'border-[#e3d0b3]';
                    if (isRegen) borderClr = 'border-[#4a7c59]';
 
-                   // Transformasi 3D
                    let translateX = '0%'; let rotateZ = '0deg'; let scale = '1'; let zIndex = '30'; let brightness = 'brightness-100';
                    if (offset === -1) { translateX = '-70%'; rotateZ = '-10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
                    else if (offset === -2) { translateX = '-120%'; rotateZ = '-20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
@@ -883,7 +882,8 @@ export default function ArenaPage() {
                          if (offset !== 0) {
                            setActiveDuelCardIndex(index);
                          } else if (!isDisabled) {
-                           handleUseMaterial(mat.name);
+                           // MEMBUKA MODAL KONFIRMASI, BUKAN LANGSUNG EKSEKUSI
+                           setConfirmModal({ isOpen: true, materialName: mat.name, material: mat });
                          }
                        }} 
                        style={{ 
@@ -918,7 +918,6 @@ export default function ArenaPage() {
                    )
                  })}
 
-                 {/* Tombol Kanan */}
                  <button 
                    onClick={() => { if (activeDuelCardIndex < myDeckNames.length - 1) setActiveDuelCardIndex(activeDuelCardIndex + 1); }}
                    disabled={activeDuelCardIndex === myDeckNames.length - 1 || myDeckNames.length === 0}
@@ -1091,6 +1090,45 @@ export default function ArenaPage() {
             <button onClick={() => handleFinalizeDuel('dashboard')} className="bg-[#85200c] border border-[#85200c] md:border-2 text-white px-4 py-2 md:px-6 md:py-2.5 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-all shadow-lg">SELESAIKAN DUEL</button>
           </div>
 
+        </div>
+      )}
+
+      {/* ================= MODAL KONFIRMASI PAKAI MATERIAL ================= */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#1c222e] border-2 border-[#8c7f73] p-6 md:p-8 max-w-md w-full shadow-2xl relative">
+            
+            {/* Dekorasi Sudut */}
+            <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#e3d0b3]"></div>
+            <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#e3d0b3]"></div>
+            
+            <h3 className="text-[#e3d0b3] font-bold text-lg md:text-xl text-center mb-4 uppercase tracking-widest">
+              Konfirmasi Aksi
+            </h3>
+            <p className="text-[#cfc1a6] text-center mb-8 text-sm md:text-base">
+              Apakah kamu yakin ingin menggunakan material <br/>
+              <strong className="text-white text-lg md:text-xl">[{confirmModal.material?.name}]</strong> <br/>
+              untuk turn ini?
+            </p>
+            
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setConfirmModal({ isOpen: false, materialName: '', material: null })}
+                className="flex-1 bg-transparent border border-[#8c7f73] text-[#8c7f73] hover:bg-[#8c7f73] hover:text-[#1c222e] font-bold py-2 text-xs md:text-sm tracking-widest uppercase transition-colors"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={() => {
+                  handleUseMaterial(confirmModal.materialName);
+                  setConfirmModal({ isOpen: false, materialName: '', material: null });
+                }}
+                className="flex-1 bg-[#e3d0b3] text-[#1c222e] font-bold py-2 text-xs md:text-sm tracking-widest uppercase hover:bg-white transition-colors"
+              >
+                Gunakan
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

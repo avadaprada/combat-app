@@ -115,7 +115,7 @@ export default function DashboardPage() {
         backgroundColor: '#1C2330',
         useCORS: true,
         logging: false,
-        // TRIK SAKTI: Menghapus efek 'scale' sesaat sebelum gambar di-render
+        // Menghapus efek 'scale' sesaat sebelum gambar di-render agar tidak pecah
         onclone: (clonedDoc) => {
           const wrapper = clonedDoc.getElementById('mobile-scale-wrapper');
           if (wrapper) {
@@ -201,15 +201,14 @@ export default function DashboardPage() {
 
       {profile && (
         <>
-          <div className="w-full flex flex-col items-center">
+          <div className="w-full flex flex-col items-center max-w-[1500px]">
             
-            {/* ====== WRAPPER KARTU LISENSI (RESPONSIVE SCALE) ====== */}
+            {/* ====== WRAPPER KARTU LISENSI (HANYA UNTUK TAMPILAN) ====== */}
             <div className="w-full flex justify-center overflow-x-auto custom-scrollbar pb-2">
               
-              {/* Wadah relative dengan tinggi yang sudah dipotong pas (mepet) untuk versi HP */}
               <div className="relative w-[1500px] h-[300px] min-[390px]:h-[350px] sm:h-[550px] md:h-auto flex justify-center md:block">
                 
-                {/* Area yang diperkecil (scale) */}
+                {/* Area yang diperkecil (scale) di HP */}
                 <div 
                   id="mobile-scale-wrapper"
                   className="origin-top scale-[0.25] min-[390px]:scale-[0.3] sm:scale-[0.45] md:scale-100 shrink-0"
@@ -440,28 +439,27 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 </div>
-
-                {/* TOMBOL DOWNLOAD (Absolut menempel di pojok kanan bawah untuk mobile, normal untuk desktop) */}
-                <div className="absolute bottom-0 right-0 md:static md:flex md:justify-end md:w-full md:mt-4 md:pr-4 z-30">
-                  <button 
-                    onClick={downloadImage} 
-                    disabled={isDownloading} 
-                    className="bg-[#1C2330] border border-[#EDE2CF] md:border-2 text-[#EDE2CF] px-4 py-2 text-[10px] md:text-xs font-bold tracking-wider hover:bg-[#EDE2CF] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2 font-sans"
-                  >
-                    <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                    {isDownloading ? 'MENYIMPAN...' : 'SIMPAN GAMBAR'}
-                  </button>
-                </div>
-
               </div>
             </div>
+
+            {/* TOMBOL DOWNLOAD (Berada di luar container scale, jadi selalu terlihat di layar HP) */}
+            <div className="w-full flex justify-end mt-2 md:mt-4 px-2 md:px-0 z-30">
+              <button 
+                onClick={downloadImage} 
+                disabled={isDownloading} 
+                className="bg-[#1C2330] border border-[#EDE2CF] md:border-2 text-[#EDE2CF] px-4 py-2 text-[10px] md:text-xs font-bold tracking-wider hover:bg-[#EDE2CF] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2 font-sans"
+              >
+                <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                {isDownloading ? 'MENYIMPAN...' : 'SIMPAN GAMBAR'}
+              </button>
+            </div>
+
           </div>
         </>
       )}
 
       {/* ===== MATERIAL LIBRARY DENGAN FILTER ===== */}
-      {/* Jarak mt diperkecil jadi mt-4 agar tidak ada ruang kosong berlebih di HP */}
-      <div ref={materialLibRef} className="w-full max-w-[1500px] mt-2 md:mt-16 mb-20 px-2 md:px-4 flex flex-col items-center scroll-mt-24">
+      <div ref={materialLibRef} className="w-full max-w-[1500px] mt-4 md:mt-12 mb-20 px-2 md:px-4 flex flex-col items-center scroll-mt-24">
         
         {/* Header & Filter Bar */}
         <div className="w-full mb-6 md:mb-8">

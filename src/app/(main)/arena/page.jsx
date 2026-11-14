@@ -1163,7 +1163,7 @@ export default function ArenaPage() {
               <div className="w-full min-w-max flex justify-center pb-4">
                 
                 {/* ===== AREA KARTU (UKURAN DESKTOP 1500PX) ===== */}
-                <div ref={matchDataRef} className="relative w-[900px] shrink-0 bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden">
+                <div ref={matchDataRef} className="relative w-[600px] shrink-0 bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden">
                   
                   {/* Ornamen Batang Diagonal Kiri */}
                   <div className="absolute top-0 bottom-0 left-6 flex flex-col justify-around py-10 z-0">

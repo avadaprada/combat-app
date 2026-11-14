@@ -38,13 +38,32 @@ export default function ArenaPage() {
   const [showMatchData, setShowMatchData] = useState(false)
   const [isDownloading, setIsDownloading] = useState(false)
   const [isDownloadingResult, setIsDownloadingResult] = useState(false)
-
+  const [previewScale, setPreviewScale] = useState(0.5) 
+  
   const [canContinueDuel, setCanContinueDuel] = useState(false)
 
   const [modal, setModal] = useState({ isOpen: false, message: '', type: 'info' })
   const supabase = createClient()
   const [isProcessingMove, setIsProcessingMove] = useState(false)
   const isProcessingRef = useRef(false)
+
+  // ================= HITUNG SKALA KARTU PRE-COMBAT =================
+  useEffect(() => {
+    const handleResize = () => {
+      if (typeof window !== 'undefined') {
+        // Lebar maksimal modal dikurangi padding (sekitar 48px)
+        const maxModalWidth = Math.min(window.innerWidth - 48, 1400); 
+        // Hitung skala. Kartu aslinya 1500px.
+        const scale = maxModalWidth / 1500; 
+        // Batasi agar tidak terlalu kecil (minimal 0.25) atau terlalu besar (maksimal 1)
+        setPreviewScale(Math.max(0.25, Math.min(scale, 1)));
+      }
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [showMatchData]);
+  // =================================================================
 
   // ================== FITUR AUTO-RESUME ==================
   useEffect(() => {
@@ -1136,12 +1155,12 @@ export default function ArenaPage() {
         </div>
       )}
 
-      {/* ================= MODAL PRE-COMBAT (DATA MATCH) ================= */}
+            {/* ================= MODAL PRE-COMBAT (DATA MATCH) ================= */}
       {showMatchData && arenaData && duelData && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm overflow-hidden">
           
           {/* Modal Container */}
-          <div className="bg-[#1c222e] border-2 border-[#8c7f73] w-full max-w-[1400px] h-auto max-h-[70vh] rounded-lg shadow-xl flex flex-col overflow-hidden relative">
+          <div className="bg-[#1c222e] border-2 border-[#8c7f73] w-full max-w-[1400px] h-auto max-h-[90vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
             
             {/* Header Modal */}
             <div className="flex justify-between items-center p-3 md:p-4 border-b border-[#8c7f73] shrink-0 bg-[#12161f]">
@@ -1157,13 +1176,35 @@ export default function ArenaPage() {
             </div>
 
             {/* Body Modal (Scrollable) */}
-            <div className="flex-1 overflow-auto p-4 md:p-6 custom-scrollbar bg-[#0f141c]">
+            <div className="flex-1 overflow-auto p-2 md:p-4 custom-scrollbar bg-[#0f141c] flex justify-center items-start">
               
-              {/* Wrapper agar kartu 1500px berada di tengah (desktop) atau bisa digeser (mobile) */}
-              <div className="w-full min-w-max flex justify-center pb-4">
+              {/* 
+                WRAPPER SKALA DINAMIS
+                - width & height dihitung berdasarkan skala agar tidak menyisakan ruang kosong
+                - transform: scale() mengecilkan kartu 1500px agar pas di layar
+              */}
+              <div 
+                className="relative flex justify-center shrink-0"
+                style={{ 
+                  width: `${1500 * previewScale}px`, 
+                  height: `${1030 * previewScale}px`, // Perkiraan tinggi kartu
+                  transition: 'width 0.2s, height 0.2s'
+                }}
+              >
                 
-                {/* ===== AREA KARTU (UKURAN DESKTOP 1500PX) ===== */}
-                <div ref={matchDataRef} className="relative w-[1500px] shrink-0 bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden">
+                {/* ===== AREA KARTU ASLI (1500PX) ===== */}
+                <div 
+                  ref={matchDataRef} 
+                  style={{ 
+                    transform: `scale(${previewScale})`, 
+                    transformOrigin: 'top left',
+                    width: '1500px',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0
+                  }}
+                  className="relative bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden"
+                >
                   
                   {/* Ornamen Batang Diagonal Kiri */}
                   <div className="absolute top-0 bottom-0 left-6 flex flex-col justify-around py-10 z-0">
@@ -1274,7 +1315,6 @@ export default function ArenaPage() {
                           </div>
                         </div>
 
-                        {/* COMBAT STYLE LAWAN */}
                         <div className="text-[10px] text-[#8c7f73] font-bold mb-2 uppercase tracking-wider">Combat Style Lawan</div>
                         <div className="flex flex-wrap gap-1 mb-6">
                           {['SPELLCRAFT', 'ARMAMENT', 'ALCHEMIA', 'RELICIUM', 'COMBINATION'].map((style) => {
@@ -1304,7 +1344,6 @@ export default function ArenaPage() {
                           })}
                         </div>
 
-                        {/* Barcode & Logo Ministry (Sudah diperkecil) */}
                         <div className="mt-auto flex flex-col items-center w-full pt-6">
                           <svg className="w-[60%] h-6 mb-3 opacity-80" preserveAspectRatio="none" viewBox="0 0 100 20">
                             {[...Array(40)].map((_, i) => (
@@ -1323,7 +1362,6 @@ export default function ArenaPage() {
 
                       {/* KOLOM 2 (TENGAH) - col-span-3 */}
                       <div className="col-span-3 flex flex-col pl-2">
-                        {/* Energy & Combat Style Bersebelahan */}
                         <div className="flex gap-4 mb-8">
                           <div className="flex-1">
                             <div className="text-[#e3d0b3] font-bold text-[11px] mb-3 tracking-widest uppercase">Basic Energy</div>
@@ -1421,7 +1459,6 @@ export default function ArenaPage() {
                           {(duelData[arenaData.myRole.toLowerCase()].deck || []).length} / {TIER_DECK_LIMIT[arenaData.license.tier] || 5} MATERIAL (DECK TERKUNCI)
                         </div>
 
-                        {/* List Slot Material (Selalu menampilkan maksimal slot) */}
                         <div className="flex flex-col gap-1.5 w-full max-w-[320px] mx-auto">
                           {Array.from({ length: TIER_DECK_LIMIT[arenaData.license.tier] || 5 }).map((_, i) => {
                             const matName = (duelData[arenaData.myRole.toLowerCase()].deck || [])[i];

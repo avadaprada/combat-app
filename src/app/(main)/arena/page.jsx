@@ -1141,7 +1141,7 @@ export default function ArenaPage() {
         <div className="fixed inset-0 z-[999] flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm overflow-hidden">
           
           {/* Modal Container */}
-          <div className="bg-[#1c222e] border-2 border-[#8c7f73] w-full max-w-[120px] h-auto max-h-[50vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
+          <div className="bg-[#1c222e] border-2 border-[#8c7f73] w-full max-w-[200px] h-auto max-h-[70vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
             
             {/* Header Modal */}
             <div className="flex justify-between items-center p-3 md:p-4 border-b border-[#8c7f73] shrink-0 bg-[#12161f]">

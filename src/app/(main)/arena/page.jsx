@@ -49,7 +49,6 @@ export default function ArenaPage() {
       try { setMaterialsList(JSON.parse(cachedMats)); } catch (e) {}
     }
 
-    // Cek apakah ada sesi duel yang belum diselesaikan
     const savedSession = localStorage.getItem('cc_arena_session');
     if (savedSession) {
       try {
@@ -59,7 +58,6 @@ export default function ArenaPage() {
           setDuelData(savedDuel);
           setView(savedView);
           
-          // Jika masuk ke layar result, pastikan cek limit harian
           if (savedView === 'result') {
             const combatId = savedArena.license.id;
             if (combatId) checkDailyLimit(combatId);
@@ -72,7 +70,6 @@ export default function ArenaPage() {
     }
   }, []);
 
-  // Simpan session setiap kali view / data berubah
   useEffect(() => {
     if ((view === 'duel' || view === 'result') && arenaData && duelData) {
       localStorage.setItem('cc_arena_session', JSON.stringify({ arenaData, duelData, view }));
@@ -81,8 +78,6 @@ export default function ArenaPage() {
     }
   }, [view, arenaData, duelData]);
   // ========================================================
-
-  // ================= ACTIONS =================
 
   const handleEnterPractitioner = async () => {
     setView('practitioner')
@@ -276,16 +271,25 @@ export default function ArenaPage() {
     }
   }
 
+  // ================= DOWNLOAD HASIL =================
   const downloadResultImage = async () => {
     if (!resultRef.current) return;
     setIsDownloadingResult(true);
+    
+    const wrapper = document.getElementById('result-scale-wrapper');
+    const originalClass = wrapper ? wrapper.className : '';
+
     try {
-      await new Promise(resolve => setTimeout(resolve, 800));
+      if (wrapper) wrapper.className = 'origin-top shrink-0 w-[1250px]';
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       const canvas = await html2canvas(resultRef.current, {
         scale: 2,
         backgroundColor: '#1C2330',
         useCORS: true,
-        logging: false
+        logging: false,
+        width: 1250,
+        windowWidth: 1250
       });
       const link = document.createElement('a');
       link.download = `duel-result-${arenaData.license.id}.png`;
@@ -294,27 +298,51 @@ export default function ArenaPage() {
     } catch (err) {
       setModal({ isOpen: true, message: 'Gagal menyimpan gambar: ' + err.message, type: 'error' });
     } finally {
+      if (wrapper) wrapper.className = originalClass;
       setIsDownloadingResult(false);
     }
   }
 
-    const handleFinalizeDuel = async (navigateTo) => {
+  const downloadMatchData = async () => {
+    if (!matchDataRef.current) return;
+    setIsDownloading(true);
+
+    const wrapper = document.getElementById('matchdata-scale-wrapper');
+    const originalClass = wrapper ? wrapper.className : '';
+
+    try {
+      if (wrapper) wrapper.className = 'origin-top shrink-0 w-[1500px]';
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      const canvas = await html2canvas(matchDataRef.current, {
+        scale: 2, backgroundColor: '#0f141c', useCORS: true, logging: false, width: 1500, windowWidth: 1500
+      });
+      const link = document.createElement('a');
+      link.download = `match-data-${arenaData.license.id}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    } catch (err) {
+      setModal({ isOpen: true, message: 'Gagal menyimpan gambar: ' + err.message, type: 'error' });
+    } finally {
+      if (wrapper) wrapper.className = originalClass;
+      setIsDownloading(false);
+    }
+  }
+
+  const handleFinalizeDuel = async (navigateTo) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     const combatId = user.email.split('@')[0].trim().toUpperCase();
 
     try {
-      // Tembak API untuk mengubah status jadi finished
       await fetch('/api/arena/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: combatId, duelKey: duelData.duelKey })
       });
 
-      // Bersihkan session
       localStorage.removeItem('cc_arena_session');
       
-      // Arahkan navigasi
       if (navigateTo === 'dashboard') {
         window.location.href = '/dashboard';
       } else {
@@ -324,7 +352,6 @@ export default function ArenaPage() {
       }
     } catch (e) {
       console.error("Gagal finalisasi", e);
-      // Tetap lanjutkan navigasi meski gagal hit API (opsional)
       localStorage.removeItem('cc_arena_session');
       if (navigateTo === 'dashboard') window.location.href = '/dashboard';
       else { setView('select'); setArenaData(null); setDuelData(null); }
@@ -332,30 +359,18 @@ export default function ArenaPage() {
   };
 
   // ================= HELPER =================
-
   const generateCombatFormat = (entry) => {
     const isFainted = entry.format === 'fainted' || (entry.vpAfter !== undefined && entry.vpAfter <= 0 && entry.dmgVp > 0) || (entry.note && entry.note.includes('PINGSAN'));
-    
-    if (isFainted) {
-      return `TURN ${entry.turn}\n\n${entry.aeBefore}AE / ${entry.vpBefore}VP\n\nFAINTED: VP telah habis, tidak bisa melanjutkan duel\n\n${entry.aeAfter}AE / ${entry.vpAfter}VP`;
-    }
-
+    if (isFainted) return `TURN ${entry.turn}\n\n${entry.aeBefore}AE / ${entry.vpBefore}VP\n\nFAINTED: VP telah habis, tidak bisa melanjutkan duel\n\n${entry.aeAfter}AE / ${entry.vpAfter}VP`;
     const isSkipTurn = entry.material === '-' || !entry.material;
-    
     if (isSkipTurn) {
       let skipReason = "[ SKIP TURN: AE tidak mencukupi untuk melakukan aksi ]";
-      if (entry.note && entry.note.toLowerCase().includes('stun')) {
-          skipReason = "[ SKIP TURN: Tidak dapat melakukan aksi karena terkena efek Stun ]";
-      }
+      if (entry.note && entry.note.toLowerCase().includes('stun')) skipReason = "[ SKIP TURN: Tidak dapat melakukan aksi karena terkena efek Stun ]";
       return `TURN ${entry.turn}\n\n${entry.aeBefore}AE / ${entry.vpBefore}VP\n\n${skipReason}\n\n${entry.aeAfter}AE / ${entry.vpAfter}VP`;
     }
-
     const fmtLabel = entry.format ? entry.format.substring(0, 3).toUpperCase() : '???'
     const mat = materialsList.find(m => m.name === entry.material);
-    
-    let ceText = '-';
-    let beText = '-';
-    
+    let ceText = '-'; let beText = '-';
     if (mat) {
       if (mat.coreDesc) ceText = mat.coreDesc.split('--')[0].trim();
       const boost = mat.boost || {};
@@ -369,10 +384,7 @@ export default function ArenaPage() {
       if (boost.rechargeBurst) parts.push('Recharge Burst');
       if (parts.length > 0) beText = parts.join(', ');
     }
-
-    if (fmtLabel === 'DEF') {
-      return `TURN ${entry.turn}\n\n[ DEF ] ${entry.material}\n"CE: ${ceText}\nBE: ${beText}"\n\n${entry.aeAfter}AE / ${entry.vpAfter}VP`;
-    } 
+    if (fmtLabel === 'DEF') return `TURN ${entry.turn}\n\n[ DEF ] ${entry.material}\n"CE: ${ceText}\nBE: ${beText}"\n\n${entry.aeAfter}AE / ${entry.vpAfter}VP`;
     return `TURN ${entry.turn}\n\n${entry.aeBefore}AE / ${entry.vpBefore}VP\n\n[ ${fmtLabel} ] ${entry.material}\n"CE: ${ceText}\nBE: ${beText}"\n\n${entry.aeAfter}AE / ${entry.vpAfter}VP`;
   }
 
@@ -382,25 +394,6 @@ export default function ArenaPage() {
     setTimeout(() => setCopiedId(null), 2000)
   }
 
-  const downloadMatchData = async () => {
-    if (!matchDataRef.current) return;
-    setIsDownloading(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 800));
-      const canvas = await html2canvas(matchDataRef.current, {
-        scale: 2, backgroundColor: '#0f141c', useCORS: true, logging: false
-      });
-      const link = document.createElement('a');
-      link.download = `match-data-${arenaData.license.id}.png`;
-      link.href = canvas.toDataURL('image/png');
-      link.click();
-    } catch (err) {
-      setModal({ isOpen: true, message: 'Gagal menyimpan gambar: ' + err.message, type: 'error' });
-    } finally {
-      setIsDownloading(false);
-    }
-  }
-
   const calculateExpCp = () => {
     if (!duelData || !arenaData) return { exp: 0, cp: 0 };
     let totalMaterialExp = 0;
@@ -408,10 +401,7 @@ export default function ArenaPage() {
     (duelData.log || []).forEach(l => {
       if (l.actor === arenaData.myRole && l.material && l.material !== '-' && !usedMats.has(l.material)) {
         const mat = materialsList.find(m => m.name === l.material);
-        if (mat) {
-          totalMaterialExp += (mat.exp || 0);
-          usedMats.add(l.material);
-        }
+        if (mat) { totalMaterialExp += (mat.exp || 0); usedMats.add(l.material); }
       }
     });
     const divisor = TIER_DECK_LIMIT[arenaData.license.tier] > 5 ? 4 : 2;
@@ -428,7 +418,6 @@ export default function ArenaPage() {
     const fetchDuelState = async () => {
       try {
         if (isProcessingRef.current) return; 
-
         const res = await fetch(`/api/arena/state?duelKey=${arenaData.duel.duelKey}`)
         const result = await res.json()
         if (result.success) {
@@ -456,27 +445,27 @@ export default function ArenaPage() {
 
   // ================= RENDER =================
   return (
-    <div className="max-w-[1500px] mx-auto p-4 md:py-6">
+    <div className="max-w-[1500px] mx-auto p-3 md:p-6">
       
       {/* ================= 1. PILIH MODE ================= */}
       {view === 'select' && (
         <>
-          <div className="flex items-center gap-4 mb-8">
-            <h1 className="text-[#e3d0b3] text-sm font-bold tracking-[3px] uppercase whitespace-nowrap">Combat Arena</h1>
+          <div className="flex items-center gap-3 md:gap-4 mb-6 md:mb-8">
+            <h1 className="text-[#e3d0b3] text-xs md:text-sm font-bold tracking-[3px] uppercase whitespace-nowrap">Combat Arena</h1>
             <div className="flex-1 h-[1px] bg-gradient-to-r from-[#8c7f73] to-transparent"></div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             <div onClick={handleEnterPractitioner} className="group relative border border-[#8c7f73] bg-[#1c222e] cursor-pointer hover:border-[#e3d0b3] transition-all hover:-translate-y-1 hover:shadow-2xl flex flex-col overflow-hidden">
-              <div className="h-48 relative overflow-hidden">
+              <div className="h-40 md:h-48 relative overflow-hidden">
                 <img src="https://raw.githubusercontent.com/avadaprada/combat-console-repository/refs/heads/main/duel.png" className="w-full h-full object-cover opacity-70 group-hover:scale-105 transition-transform duration-500" alt="Practitioner" />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#1c222e] to-transparent"></div>
               </div>
-              <div className="p-6 relative">
-                <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-16 h-16 rounded-full bg-[#12161f] border border-[#8c7f73] flex items-center justify-center group-hover:border-[#e3d0b3] transition-colors">
-                  <svg className="w-8 h-8 text-[#e3d0b3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M14.5 3.5 6 12l-2.5 5L6 20l5-2.5L19.5 9M17.5 6.5 19 5M5 19l2-2"></path></svg>
+              <div className="p-4 md:p-6 relative">
+                <div className="absolute -top-6 md:-top-8 left-1/2 -translate-x-1/2 w-12 h-12 md:w-16 md:h-16 rounded-full bg-[#12161f] border border-[#8c7f73] flex items-center justify-center group-hover:border-[#e3d0b3] transition-colors">
+                  <svg className="w-6 h-6 md:w-8 md:h-8 text-[#e3d0b3]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M14.5 3.5 6 12l-2.5 5L6 20l5-2.5L19.5 9M17.5 6.5 19 5M5 19l2-2"></path></svg>
                 </div>
-                <h2 className="text-center text-[#e3d0b3] font-bold tracking-widest text-lg mt-6 mb-2">Practitioner Duel</h2>
-                <p className="text-center text-[#8c7f73] text-xs uppercase tracking-widest">1 vs 1 Ranked Match</p>
+                <h2 className="text-center text-[#e3d0b3] font-bold tracking-widest text-base md:text-lg mt-4 md:mt-6 mb-2">Practitioner Duel</h2>
+                <p className="text-center text-[#8c7f73] text-[10px] md:text-xs uppercase tracking-widest">1 vs 1 Ranked Match</p>
               </div>
             </div>
           </div>
@@ -486,46 +475,52 @@ export default function ArenaPage() {
       {/* ================= 2. DECK BUILDER ================= */}
       {view === 'practitioner' && (
         <div>
-          <div className="flex justify-between items-center mb-6">
-            <button onClick={() => setView('select')} className="border border-[#8c7f73] text-[#e3d0b3] px-4 py-2 text-xs font-bold hover:bg-[#8c7f73] transition-colors">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+            <button onClick={() => setView('select')} className="border border-[#8c7f73] text-[#e3d0b3] px-3 md:px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold hover:bg-[#8c7f73] transition-colors">
               ← Pilih Mode Lain
             </button>
-            <h2 className="text-[#e3d0b3] font-bold tracking-[3px] uppercase">Persiapan Duel</h2>
+            <h2 className="text-[#e3d0b3] font-bold tracking-[3px] uppercase text-sm md:text-base">Persiapan Duel</h2>
           </div>
-          {loading && <div className="text-center py-20 text-[#e3d0b3]">Menyelaraskan energi arena...</div>}
-          {!loading && errorMsg && <div className="bg-red-900/50 border border-red-500 text-red-200 p-6 text-center">{errorMsg}</div>}
+          {loading && <div className="text-center py-20 text-[#e3d0b3] text-sm md:text-base">Menyelaraskan energi arena...</div>}
+          {!loading && errorMsg && <div className="bg-red-900/50 border border-red-500 text-red-200 p-4 md:p-6 text-center text-sm md:text-base">{errorMsg}</div>}
 
           {!loading && arenaData && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-1 flex flex-col gap-4">
-                <div className="border border-[#8c7f73] p-6 bg-[#1c222e] text-center">
-                  <div className="text-[10px] text-[#8c7f73] tracking-widest mb-2">KAMU</div>
-                  <img src={arenaData.license.photoUrl} alt="Kamu" className="w-24 h-24 mx-auto rounded-full border-2 border-[#e3d0b3] object-cover mb-4" crossOrigin="anonymous" />
-                  <h3 className="text-[#e3d0b3] font-bold text-xl">{arenaData.license.name}</h3>
-                  <p className="text-[#8c7f73] text-xs">{arenaData.license.tier}</p>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+              
+              {/* Profil Lawan & Kamu (Disembunyikan VS-nya di HP agar hemat tempat) */}
+              <div className="lg:col-span-1 flex flex-row lg:flex-col justify-between lg:justify-start gap-2 lg:gap-4">
+                <div className="flex-1 border border-[#8c7f73] p-3 md:p-6 bg-[#1c222e] text-center">
+                  <div className="text-[8px] md:text-[10px] text-[#8c7f73] tracking-widest mb-1 md:mb-2">KAMU</div>
+                  <img src={arenaData.license.photoUrl} alt="Kamu" className="w-16 h-16 md:w-24 md:h-24 mx-auto rounded-full border-2 border-[#e3d0b3] object-cover mb-2 md:mb-4" crossOrigin="anonymous" />
+                  <h3 className="text-[#e3d0b3] font-bold text-sm md:text-xl">{arenaData.license.name}</h3>
+                  <p className="text-[#8c7f73] text-[10px] md:text-xs">{arenaData.license.tier}</p>
                 </div>
-                <div className="text-center text-[#85200c] font-bold text-2xl italic">VS</div>
-                <div className="border border-[#8c7f73] p-6 bg-[#1c222e] text-center">
-                  <div className="text-[10px] text-[#8c7f73] tracking-widest mb-2">LAWAN</div>
-                  <img src={arenaData.opponent.photoUrl} alt="Lawan" className="w-24 h-24 mx-auto rounded-full border-2 border-[#85200c] object-cover mb-4" crossOrigin="anonymous" />
-                  <h3 className="text-[#e3d0b3] font-bold text-xl">{arenaData.opponent.name}</h3>
-                  <p className="text-[#8c7f73] text-xs">{arenaData.opponent.tier}</p>
+                
+                <div className="hidden lg:block text-center text-[#85200c] font-bold text-2xl italic">VS</div>
+                <div className="lg:hidden flex items-center justify-center text-[#85200c] font-bold text-sm italic px-2">VS</div>
+
+                <div className="flex-1 border border-[#8c7f73] p-3 md:p-6 bg-[#1c222e] text-center">
+                  <div className="text-[8px] md:text-[10px] text-[#8c7f73] tracking-widest mb-1 md:mb-2">LAWAN</div>
+                  <img src={arenaData.opponent.photoUrl} alt="Lawan" className="w-16 h-16 md:w-24 md:h-24 mx-auto rounded-full border-2 border-[#85200c] object-cover mb-2 md:mb-4" crossOrigin="anonymous" />
+                  <h3 className="text-[#e3d0b3] font-bold text-sm md:text-xl">{arenaData.opponent.name}</h3>
+                  <p className="text-[#8c7f73] text-[10px] md:text-xs">{arenaData.opponent.tier}</p>
                 </div>
               </div>
 
-              <div className="lg:col-span-2 border border-[#8c7f73] p-6 bg-[#1c222e]">
-                <h3 className="text-[#e3d0b3] font-bold text-lg mb-4 border-b border-[#8c7f73] pb-2">Susun Deck Material</h3>
+              {/* Pemilihan Material */}
+              <div className="lg:col-span-2 border border-[#8c7f73] p-4 md:p-6 bg-[#1c222e]">
+                <h3 className="text-[#e3d0b3] font-bold text-base md:text-lg mb-3 md:mb-4 border-b border-[#8c7f73] pb-2">Susun Deck Material</h3>
                 
-                <div className="mb-6">
-                  <div className="text-[#8c7f73] text-xs mb-2">1. Pilih Combat Style</div>
-                  <div className="flex flex-wrap gap-2">
+                <div className="mb-4 md:mb-6">
+                  <div className="text-[#8c7f73] text-[10px] md:text-xs mb-2">1. Pilih Combat Style</div>
+                  <div className="flex flex-wrap gap-1.5 md:gap-2">
                     {Object.entries(arenaData.license.combatStyle).map(([style, state]) => {
                       if (style === 'combination') return null;
                       const isUnlocked = state === true;
                       return (
                         <button 
                           key={style} disabled={!isUnlocked} onClick={() => { setSelectedStyle(style); setSelectedMaterials([]); }}
-                          className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border transition-colors ${selectedStyle === style ? 'bg-[#e3d0b3] text-[#1c222e] border-[#e3d0b3]' : isUnlocked ? 'bg-transparent text-[#e3d0b3] border-[#8c7f73] hover:border-[#e3d0b3]' : 'bg-transparent text-[#5a5650] border-[#5a5650] cursor-not-allowed'}`}
+                          className={`px-3 py-1.5 md:px-4 md:py-2 text-[10px] md:text-xs font-bold uppercase tracking-wider border transition-colors ${selectedStyle === style ? 'bg-[#e3d0b3] text-[#1c222e] border-[#e3d0b3]' : isUnlocked ? 'bg-transparent text-[#e3d0b3] border-[#8c7f73] hover:border-[#e3d0b3]' : 'bg-transparent text-[#5a5650] border-[#5a5650] cursor-not-allowed'}`}
                         >
                           {style}
                         </button>
@@ -535,15 +530,15 @@ export default function ArenaPage() {
                 </div>
 
                 <div>
-                  <div className="text-[#8c7f73] text-xs mb-2 flex justify-between">
+                  <div className="text-[#8c7f73] text-[10px] md:text-xs mb-2 flex justify-between">
                     <span>2. Pilih Material (Maks: {TIER_DECK_LIMIT[arenaData.license.tier] || 5})</span>
                     <span className="text-[#e3d0b3] font-bold">{selectedMaterials.length} terpilih</span>
                   </div>
                   
                   {!selectedStyle ? (
-                    <div className="text-center text-[#8c7f73] py-8 border border-dashed border-[#8c7f73]">Pilih style dulu.</div>
+                    <div className="text-center text-[#8c7f73] py-8 border border-dashed border-[#8c7f73] text-xs md:text-sm">Pilih style dulu.</div>
                   ) : (
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 md:gap-3 max-h-[300px] md:max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                       {materialsList.filter(m => {
                         const matchStyle = m.type.toLowerCase() === selectedStyle;
                         const userTierIndex = TIER_ORDER.indexOf(arenaData.license.tier);
@@ -562,20 +557,18 @@ export default function ArenaPage() {
                               if (!hasAccess) return setModal({ isOpen: true, message: 'Material ini terkunci.', type: 'error' });
                               toggleMaterial(mat.name);
                             }}
-                            className={`cursor-pointer border p-2 flex flex-col relative transition-all ${!hasAccess ? 'border-[#5a5650] bg-[#12161f] opacity-60 cursor-not-allowed' : isSelected ? 'border-[#e3d0b3] bg-[#e3d0b3]/10' : 'border-[#8c7f73] hover:border-[#e3d0b3] bg-[#12161f]'}`}
+                            className={`cursor-pointer border p-1.5 md:p-2 flex flex-col relative transition-all ${!hasAccess ? 'border-[#5a5650] bg-[#12161f] opacity-60 cursor-not-allowed' : isSelected ? 'border-[#e3d0b3] bg-[#e3d0b3]/10' : 'border-[#8c7f73] hover:border-[#e3d0b3] bg-[#12161f]'}`}
                           >
                             <div className="flex justify-between items-start mb-1">
-                              <span className={`text-xs font-bold leading-tight ${hasAccess ? 'text-[#e3d0b3]' : 'text-[#8c7f73]'}`}>{mat.name}</span>
-                              {isSelected && <span className="text-[#e3d0b3]">✓</span>}
+                              <span className={`text-[10px] md:text-xs font-bold leading-tight ${hasAccess ? 'text-[#e3d0b3]' : 'text-[#8c7f73]'}`}>{mat.name}</span>
+                              {isSelected && <span className="text-[#e3d0b3] text-xs md:text-sm">✓</span>}
                             </div>
                             <div className="flex justify-between items-center mt-1">
-                              <span className="text-[#8c7f73] text-[10px] uppercase">{mat.format}</span>
-                              <div className="flex gap-1">
-                                <span className="text-[#e3d0b3] text-[9px] font-bold bg-[#8c7f73]/20 px-1 rounded">{mat.tier}</span>
-                              </div>
+                              <span className="text-[#8c7f73] text-[8px] md:text-[10px] uppercase">{mat.format}</span>
+                              <span className="text-[#e3d0b3] text-[8px] md:text-[9px] font-bold bg-[#8c7f73]/20 px-1 rounded">{mat.tier}</span>
                             </div>
-                            <div className="flex gap-2 mt-2">
-                              <span className="text-[#e3d0b3] text-[10px] bg-[#1c222e] px-1 border border-[#8c7f73]">AE: {mat.aeCost}</span>
+                            <div className="flex gap-1 mt-1 md:mt-2">
+                              <span className="text-[#e3d0b3] text-[8px] md:text-[10px] bg-[#1c222e] px-1 border border-[#8c7f73]">AE: {mat.aeCost}</span>
                             </div>
                           </div>
                         )
@@ -584,8 +577,8 @@ export default function ArenaPage() {
                   )}
                 </div>
 
-                <div className="mt-6 pt-4 border-t border-[#8c7f73]">
-                  <button onClick={handleConfirmDeck} disabled={loading || selectedMaterials.length === 0} className="w-full bg-[#e3d0b3] text-[#1c222e] font-bold py-3 text-sm tracking-widest uppercase hover:bg-white transition-colors disabled:opacity-50">
+                <div className="mt-4 md:mt-6 pt-3 md:pt-4 border-t border-[#8c7f73]">
+                  <button onClick={handleConfirmDeck} disabled={loading || selectedMaterials.length === 0} className="w-full bg-[#e3d0b3] text-[#1c222e] font-bold py-2 md:py-3 text-xs md:text-sm tracking-widest uppercase hover:bg-white transition-colors disabled:opacity-50">
                     Konfirmasi Deck
                   </button>
                 </div>
@@ -597,48 +590,50 @@ export default function ArenaPage() {
 
       {/* ================= 3. LAYAR DUEL ================= */}
       {view === 'duel' && duelData && (
-        <div className="w-full h-[85vh] flex flex-col bg-[#12161f] border border-[#8c7f73] rounded-lg overflow-hidden relative shadow-2xl">
+        <div className="w-full h-[85dvh] md:h-[85vh] flex flex-col bg-[#12161f] border border-[#8c7f73] rounded-lg overflow-hidden relative shadow-2xl">
           
-          <div className="bg-[#1c222e] p-3 border-b border-[#8c7f73] relative z-20 shadow-md">
-            <div className="flex justify-between items-center mb-2">
-              <div className="flex items-center gap-3">
-                <img src={arenaData.opponent.photoUrl} alt="Opponent" className="w-10 h-10 rounded-full border-2 border-[#85200c] object-cover bg-[#12161f]" crossOrigin="anonymous"/>
+          {/* Top Bar: Lawan */}
+          <div className="bg-[#1c222e] p-2 md:p-3 border-b border-[#8c7f73] relative z-20 shadow-md">
+            <div className="flex justify-between items-center mb-1 md:mb-2">
+              <div className="flex items-center gap-2 md:gap-3">
+                <img src={arenaData.opponent.photoUrl} alt="Opponent" className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-[#85200c] object-cover bg-[#12161f]" crossOrigin="anonymous"/>
                 <div>
-                  <h3 className="text-[#e3d0b3] font-bold text-sm leading-tight">{arenaData.opponent.name}</h3>
-                  <span className="text-[#8c7f73] text-[9px] uppercase tracking-widest">{arenaData.opponent.tier}</span>
+                  <h3 className="text-[#e3d0b3] font-bold text-xs md:text-sm leading-tight">{arenaData.opponent.name}</h3>
+                  <span className="text-[#8c7f73] text-[8px] md:text-[9px] uppercase tracking-widest">{arenaData.opponent.tier}</span>
                 </div>
               </div>
-              <div className="flex gap-4 text-right">
+              <div className="flex gap-2 md:gap-4 text-right">
                 <div>
-                  <div className="text-[9px] text-[#8c7f73] tracking-wider mb-0.5">VP</div>
-                  <div className="text-sm font-bold text-white leading-none">{duelData[arenaData.myRole === 'A' ? 'b' : 'a'].vp}</div>
+                  <div className="text-[8px] md:text-[9px] text-[#8c7f73] tracking-wider mb-0.5">VP</div>
+                  <div className="text-xs md:text-sm font-bold text-white leading-none">{duelData[arenaData.myRole === 'A' ? 'b' : 'a'].vp}</div>
                 </div>
                 <div>
-                  <div className="text-[9px] text-[#8c7f73] tracking-wider mb-0.5">AE</div>
-                  <div className="text-sm font-bold text-[#e3d0b3] leading-none">{duelData[arenaData.myRole === 'A' ? 'b' : 'a'].ae}</div>
+                  <div className="text-[8px] md:text-[9px] text-[#8c7f73] tracking-wider mb-0.5">AE</div>
+                  <div className="text-xs md:text-sm font-bold text-[#e3d0b3] leading-none">{duelData[arenaData.myRole === 'A' ? 'b' : 'a'].ae}</div>
                 </div>
               </div>
             </div>
 
-            <div className="flex gap-2 w-full">
-              <div className="flex-1 bg-[#12161f] h-1.5 border border-[#8c7f73]">
+            <div className="flex gap-1 md:gap-2 w-full">
+              <div className="flex-1 bg-[#12161f] h-1 md:h-1.5 border border-[#8c7f73]">
                 <div className="h-full bg-gradient-to-r from-[#85200c] to-red-500 transition-all duration-500" style={{ width: `${(duelData[arenaData.myRole === 'A' ? 'b' : 'a'].vp / arenaData.opponent.vp) * 100}%` }}></div>
               </div>
-              <div className="flex-1 bg-[#12161f] h-1.5 border border-[#8c7f73]">
+              <div className="flex-1 bg-[#12161f] h-1 md:h-1.5 border border-[#8c7f73]">
                 <div className="h-full bg-gradient-to-r from-[#8c7f73] to-[#e3d0b3] transition-all duration-500" style={{ width: `${(duelData[arenaData.myRole === 'A' ? 'b' : 'a'].ae / arenaData.opponent.ae) * 100}%` }}></div>
               </div>
             </div>
 
-            <div className="flex gap-1.5 mt-2 overflow-x-auto custom-scrollbar pb-1">
+            <div className="flex gap-1 mt-1 md:mt-2 overflow-x-auto custom-scrollbar pb-1">
               {(duelData[arenaData.myRole === 'A' ? 'b' : 'a'].deck || []).map((matName, i) => (
-                <div key={i} className="text-[8px] bg-[#12161f] border border-[#5a5650] text-[#8c7f73] px-1.5 py-0.5 whitespace-nowrap rounded">
+                <div key={i} className="text-[6px] md:text-[8px] bg-[#12161f] border border-[#5a5650] text-[#8c7f73] px-1 py-0.5 whitespace-nowrap rounded">
                   {matName}
                 </div>
               ))}
             </div>
           </div>
 
-          <div ref={logContainerRef} className="flex-1 overflow-y-auto p-4 flex flex-col gap-5 custom-scrollbar bg-[#12161f]">
+          {/* Logs */}
+          <div ref={logContainerRef} className="flex-1 overflow-y-auto p-2 md:p-4 flex flex-col gap-3 md:gap-5 custom-scrollbar bg-[#12161f]">
             {duelData.log && duelData.log.length > 0 ? (
               [...duelData.log].map((entry, idx) => {
                 const isMe = entry.actor === arenaData.myRole;
@@ -647,13 +642,13 @@ export default function ArenaPage() {
                 if (entry.isOptimistic) {
                   return (
                     <div key={`opt-${idx}`} className={`flex flex-col w-full max-w-[850px] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
-                      <div className={`text-sm mb-2 px-4 py-3 rounded bg-black/20 border-${isMe ? 'r' : 'l'}-2 ${isMe ? 'border-[#e3d0b3]' : 'border-[#85200c]'} flex items-center gap-3`}>
+                      <div className={`text-xs md:text-sm mb-1 md:mb-2 px-3 py-2 rounded bg-black/20 border-${isMe ? 'r' : 'l'}-2 ${isMe ? 'border-[#e3d0b3]' : 'border-[#85200c]'} flex items-center gap-2 md:gap-3`}>
                         <span className={`font-bold ${isMe ? 'text-[#e3d0b3]' : 'text-[#f0b9a8]'}`}>{actorName}</span>
-                        <span className="text-[#998776] italic">{entry.note}</span>
+                        <span className="text-[#998776] italic text-[10px] md:text-sm">{entry.note}</span>
                         <div className="flex gap-1 ml-1">
-                          <div className="w-1.5 h-1.5 bg-[#e3d0b3] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                          <div className="w-1.5 h-1.5 bg-[#e3d0b3] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                          <div className="w-1.5 h-1.5 bg-[#e3d0b3] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                          <div className="w-1 h-1 md:w-1.5 md:h-1.5 bg-[#e3d0b3] rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-1 h-1 md:w-1.5 md:h-1.5 bg-[#e3d0b3] rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                          <div className="w-1 h-1 md:w-1.5 md:h-1.5 bg-[#e3d0b3] rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
                         </div>
                       </div>
                     </div>
@@ -661,38 +656,32 @@ export default function ArenaPage() {
                 }
 
                 const copyText = generateCombatFormat(entry);
-
                 const isFainted = entry.format === 'fainted' || (entry.vpAfter !== undefined && entry.vpAfter <= 0 && entry.dmgVp > 0) || (entry.note && entry.note.includes('PINGSAN'));
                 const isSkipTurn = entry.material === '-' || !entry.material;
 
                 let displayNote = entry.note || `menggunakan ${entry.material}.`;
-                if (isFainted) {
-                  displayNote = "FAINTED: VP telah habis, tidak bisa melanjutkan duel";
-                } else if (isSkipTurn) {
-                  displayNote = entry.note && entry.note.toLowerCase().includes('stun') 
-                    ? "[ SKIP TURN: Tidak dapat melakukan aksi karena terkena efek Stun ]" 
-                    : "[ SKIP TURN: AE tidak mencukupi untuk melakukan aksi ]";
-                }
+                if (isFainted) displayNote = "FAINTED: VP telah habis, tidak bisa melanjutkan duel";
+                else if (isSkipTurn) displayNote = entry.note && entry.note.toLowerCase().includes('stun') ? "[ SKIP TURN: Tidak dapat melakukan aksi karena terkena efek Stun ]" : "[ SKIP TURN: AE tidak mencukupi untuk melakukan aksi ]";
 
                 return (
                   <div key={idx} className={`flex flex-col w-full max-w-[850px] ${isMe ? 'self-end items-end' : 'self-start items-start'}`}>
-                    <div className={`text-sm mb-2 px-2 py-1.5 rounded bg-black/20 border-l-2 ${isMe ? 'text-right text-[#e3d0b3] border-[#e3d0b3]' : 'text-left text-[#f0b9a8] border-[#85200c]'}`}>
+                    <div className={`text-[10px] md:text-sm mb-1 md:mb-2 px-2 py-1 md:py-1.5 rounded bg-black/20 border-l-2 ${isMe ? 'text-right text-[#e3d0b3] border-[#e3d0b3]' : 'text-left text-[#f0b9a8] border-[#85200c]'}`}>
                       <span className="font-bold">{actorName}</span> {displayNote}
                     </div>
                     
-                    <div className={`relative w-full border ${isMe ? 'border-[#e3d0b3]/50 bg-[#1c222e]' : 'border-[#85200c]/50 bg-[#1a1414]'} rounded p-3 font-mono text-[11px] leading-relaxed`}>
+                    <div className={`relative w-full border ${isMe ? 'border-[#e3d0b3]/50 bg-[#1c222e]' : 'border-[#85200c]/50 bg-[#1a1414]'} rounded p-2 md:p-3 font-mono text-[9px] md:text-[11px] leading-relaxed`}>
                       {isMe && (
-                        <button onClick={() => handleCopy(copyText, idx)} className="absolute top-2 right-2 bg-[#12161f] border border-[#8c7f73] text-[#8c7f73] hover:text-[#e3d0b3] hover:border-[#e3d0b3] px-2 py-1 rounded text-[9px] font-sans font-bold uppercase transition-colors">
+                        <button onClick={() => handleCopy(copyText, idx)} className="absolute top-1 right-1 md:top-2 md:right-2 bg-[#12161f] border border-[#8c7f73] text-[#8c7f73] hover:text-[#e3d0b3] hover:border-[#e3d0b3] px-1.5 py-0.5 md:px-2 md:py-1 rounded text-[8px] md:text-[9px] font-sans font-bold uppercase transition-colors">
                           {copiedId === idx ? 'Tersalin ✓' : 'Copy Format'}
                         </button>
                       )}
-                      <div className="text-[#8c7f73] mb-1">TURN {entry.turn} <span className="text-[#e3d0b3] font-bold ml-2">{actorName}</span></div>
+                      <div className="text-[#8c7f73] mb-0.5 md:mb-1">TURN {entry.turn} <span className="text-[#e3d0b3] font-bold ml-1 md:ml-2">{actorName}</span></div>
                       
                       {isFainted || isSkipTurn ? (
                         <>
                           <div className="text-white/70">{entry.aeBefore}AE / {entry.vpBefore}VP</div>
-                          <div className="my-1.5 py-1 border-y border-dashed border-[#8c7f73]/30">
-                            <div className={isFainted ? "text-[#85200c] font-bold text-xs" : "text-[#f0b9a8] font-bold text-xs"}>
+                          <div className="my-1 md:my-1.5 py-1 border-y border-dashed border-[#8c7f73]/30">
+                            <div className={isFainted ? "text-[#85200c] font-bold text-[10px] md:text-xs" : "text-[#f0b9a8] font-bold text-[10px] md:text-xs"}>
                               {isFainted ? "FAINTED: VP telah habis, tidak bisa melanjutkan duel" : displayNote}
                             </div>
                           </div>
@@ -701,9 +690,9 @@ export default function ArenaPage() {
                       ) : (
                         <>
                           <div className="text-white/70">{entry.aeBefore}AE / {entry.vpBefore}VP</div>
-                          <div className="my-1.5 py-1 border-y border-dashed border-[#8c7f73]/30">
+                          <div className="my-1 md:my-1.5 py-1 border-y border-dashed border-[#8c7f73]/30">
                             <div>[ <span className="text-[#e3d0b3] font-bold">{entry.format ? entry.format.substring(0,3).toUpperCase() : '???'}</span> ] <span className="text-white font-bold">{entry.material}</span></div>
-                            <div className="text-[#f0b9a8] mt-1">TOTAL DMG: {entry.dmgAe || 0}AE & {entry.dmgVp || 0}VP</div>
+                            <div className="text-[#f0b9a8] mt-0.5 md:mt-1">TOTAL DMG: {entry.dmgAe || 0}AE & {entry.dmgVp || 0}VP</div>
                           </div>
                           <div className="text-white/70">{entry.aeAfter}AE / {entry.vpAfter}VP</div>
                         </>
@@ -713,48 +702,51 @@ export default function ArenaPage() {
                 )
               })
             ) : (
-              <div className="text-center text-[#8c7f73] m-auto italic flex flex-col items-center gap-4">
-                <svg className="w-8 h-8 animate-spin text-[#8c7f73]" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              <div className="text-center text-[#8c7f73] m-auto italic flex flex-col items-center gap-4 text-xs md:text-sm">
+                <svg className="w-6 h-6 md:w-8 md:h-8 animate-spin text-[#8c7f73]" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 Menyelaraskan energi pertarungan...
               </div>
             )}
             <div ref={logEndRef} />
           </div>
 
-          <div className="bg-[#1c222e] border-t-2 border-[#e3d0b3] relative flex h-[180px] items-end">
-            <div className={`absolute -top-4 left-1/2 -translate-x-1/2 px-8 py-1 rounded-full border font-bold text-[10px] tracking-[0.2em] uppercase shadow-lg z-30 ${duelData.currentTurn === arenaData.myRole ? 'bg-[#e3d0b3] text-[#1c222e] border-white animate-pulse' : 'bg-[#12161f] text-[#85200c] border-[#85200c]'}`}>
-                {duelData.currentTurn === arenaData.myRole ? 'GILIRANMU — PILIH KARTU' : 'MENUNGGU LAWAN...'}
+          {/* Bottom Control Panel */}
+          <div className="bg-[#1c222e] border-t-2 border-[#e3d0b3] relative flex h-[180px] md:h-[180px] items-end">
+            <div className={`absolute -top-3 md:-top-4 left-1/2 -translate-x-1/2 px-4 md:px-8 py-0.5 md:py-1 rounded-full border font-bold text-[8px] md:text-[10px] tracking-[0.2em] uppercase shadow-lg z-30 ${duelData.currentTurn === arenaData.myRole ? 'bg-[#e3d0b3] text-[#1c222e] border-white animate-pulse' : 'bg-[#12161f] text-[#85200c] border-[#85200c]'}`}>
+                {duelData.currentTurn === arenaData.myRole ? 'GILIRANMU' : 'MENUNGGU LAWAN...'}
             </div>
 
-            <div className="w-[220px] shrink-0 border-r border-[#8c7f73] p-3 flex flex-col justify-between h-full bg-[#12161f] z-10">
-               <div className="flex items-center gap-2">
-                  <img src={arenaData.license.photoUrl} alt="Me" className="w-10 h-10 rounded-full border border-[#e3d0b3] object-cover bg-[#1c222e]" crossOrigin="anonymous"/>
-                  <div>
-                    <h3 className="text-[#e3d0b3] font-bold text-xs leading-tight">{arenaData.license.name}</h3>
-                    <span className="text-[#8c7f73] text-[8px] uppercase tracking-widest">{arenaData.license.tier}</span>
+            {/* Profil Kiri (Dikecilkan di HP) */}
+            <div className="w-[100px] md:w-[220px] shrink-0 border-r border-[#8c7f73] p-1.5 md:p-3 flex flex-col justify-between h-full bg-[#12161f] z-10">
+               <div className="flex items-center gap-1 md:gap-2">
+                  <img src={arenaData.license.photoUrl} alt="Me" className="w-6 h-6 md:w-10 md:h-10 rounded-full border border-[#e3d0b3] object-cover bg-[#1c222e]" crossOrigin="anonymous"/>
+                  <div className="overflow-hidden">
+                    <h3 className="text-[#e3d0b3] font-bold text-[8px] md:text-xs leading-tight truncate">{arenaData.license.name}</h3>
+                    <span className="text-[#8c7f73] text-[6px] md:text-[8px] uppercase tracking-widest">{arenaData.license.tier}</span>
                   </div>
                </div>
-               <div className="space-y-1.5 mt-2">
+               <div className="space-y-1 md:space-y-1.5 mt-1 md:mt-2">
                  <div>
-                    <div className="flex justify-between text-[9px] text-[#8c7f73]"><span>VP</span><span className="font-bold text-white">{duelData[arenaData.myRole === 'A' ? 'a' : 'b'].vp}</span></div>
-                    <div className="bg-[#1c222e] h-1.5 border border-[#8c7f73]"><div className="h-full bg-[#85200c]" style={{ width: `${(duelData[arenaData.myRole === 'A' ? 'a' : 'b'].vp / arenaData.license.vp) * 100}%` }}></div></div>
+                    <div className="flex justify-between text-[7px] md:text-[9px] text-[#8c7f73]"><span>VP</span><span className="font-bold text-white">{duelData[arenaData.myRole === 'A' ? 'a' : 'b'].vp}</span></div>
+                    <div className="bg-[#1c222e] h-1 md:h-1.5 border border-[#8c7f73]"><div className="h-full bg-[#85200c]" style={{ width: `${(duelData[arenaData.myRole === 'A' ? 'a' : 'b'].vp / arenaData.license.vp) * 100}%` }}></div></div>
                  </div>
                  <div>
-                    <div className="flex justify-between text-[9px] text-[#8c7f73]"><span>AE</span><span className="font-bold text-[#e3d0b3]">{duelData[arenaData.myRole === 'A' ? 'a' : 'b'].ae}</span></div>
-                    <div className="bg-[#1c222e] h-1.5 border border-[#8c7f73]"><div className="h-full bg-[#e3d0b3]" style={{ width: `${(duelData[arenaData.myRole === 'A' ? 'a' : 'b'].ae / arenaData.license.ae) * 100}%` }}></div></div>
+                    <div className="flex justify-between text-[7px] md:text-[9px] text-[#8c7f73]"><span>AE</span><span className="font-bold text-[#e3d0b3]">{duelData[arenaData.myRole === 'A' ? 'a' : 'b'].ae}</span></div>
+                    <div className="bg-[#1c222e] h-1 md:h-1.5 border border-[#8c7f73]"><div className="h-full bg-[#e3d0b3]" style={{ width: `${(duelData[arenaData.myRole === 'A' ? 'a' : 'b'].ae / arenaData.license.ae) * 100}%` }}></div></div>
                  </div>
                </div>
-               <div className="mt-2 text-center bg-[#1c222e] border border-[#8c7f73] rounded p-1.5">
+               <div className="hidden md:block mt-2 text-center bg-[#1c222e] border border-[#8c7f73] rounded p-1.5">
                   <div className="text-[8px] text-[#8c7f73] uppercase tracking-widest mb-1 border-b border-[#8c7f73]/30 pb-1">Estimasi Reward</div>
                   <div className="flex justify-center gap-3 text-[10px]"><div><span className="text-[#8c7f73]">EXP:</span> <span className="text-[#e3d0b3] font-bold">{estExp}</span></div><div><span className="text-[#8c7f73]">CP:</span> <span className="text-[#e3d0b3] font-bold">{estCp}</span></div></div>
                </div>
             </div>
 
+            {/* Kartu Deck */}
             <div className="flex-1 flex flex-col relative h-full z-10 bg-[#1c222e]">
-               <div className="absolute top-2 right-4">
-                 <button onClick={() => setShowMatchData(true)} className="bg-[#12161f] border border-[#e3d0b3] text-[#e3d0b3] px-3 py-1 text-[10px] uppercase font-bold tracking-widest hover:bg-[#e3d0b3] hover:text-[#1c222e] transition-colors rounded-sm shadow-md">Lihat Pre-Combat</button>
+               <div className="absolute top-1 md:top-2 right-2 md:right-4 z-20">
+                 <button onClick={() => setShowMatchData(true)} className="bg-[#12161f] border border-[#e3d0b3] text-[#e3d0b3] px-2 py-1 md:px-3 md:py-1 text-[8px] md:text-[10px] uppercase font-bold tracking-widest hover:bg-[#e3d0b3] hover:text-[#1c222e] transition-colors rounded-sm shadow-md">Pre-Combat</button>
                </div>
-               <div className="flex-1 overflow-x-auto p-4 pt-8 flex items-end gap-2 custom-scrollbar">
+               <div className="flex-1 overflow-x-auto p-2 md:p-4 pt-6 md:pt-8 flex items-end gap-1.5 md:gap-2 custom-scrollbar">
                  {(duelData[arenaData.myRole === 'A' ? 'a' : 'b'].deck || []).map((matName, i) => {
                    const mat = materialsList.find(m => m.name === matName);
                    if (!mat) return null;
@@ -775,26 +767,26 @@ export default function ArenaPage() {
                    if (isRegen) borderClr = 'border-[#4a7c59]';
                    
                    return (
-                     <div key={i} onClick={() => !isDisabled && handleUseMaterial(mat.name)} className={`group relative w-[90px] h-[130px] shrink-0 flex flex-col rounded-md border-2 overflow-hidden transition-all duration-300 ${borderClr} bg-[#12161f] ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed translate-y-2' : 'hover:-translate-y-2 hover:shadow-[0_10px_20px_rgba(0,0,0,0.6)] cursor-pointer shadow-md'}`}>
+                     <div key={i} onClick={() => !isDisabled && handleUseMaterial(mat.name)} className={`group relative w-[70px] md:w-[90px] h-[100px] md:h-[130px] shrink-0 flex flex-col rounded border md:border-2 overflow-hidden transition-all duration-300 ${borderClr} bg-[#12161f] ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed translate-y-1 md:translate-y-2' : 'hover:-translate-y-1 md:hover:-translate-y-2 hover:shadow-[0_10px_20px_rgba(0,0,0,0.6)] cursor-pointer shadow-md'}`}>
                        
                        {isProcessingMove && !isDisabled && (
                          <div className="absolute inset-0 bg-black/60 z-30 flex items-center justify-center">
-                           <div className="w-6 h-6 border-2 border-[#e3d0b3] border-t-transparent rounded-full animate-spin"></div>
+                           <div className="w-4 h-4 md:w-6 md:h-6 border-2 border-[#e3d0b3] border-t-transparent rounded-full animate-spin"></div>
                          </div>
                        )}
 
-                       <div className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-[#1c222e] border border-[#8c7f73] flex items-center justify-center text-white font-bold text-[10px] z-20">{mat.aeCost}</div>
+                       <div className="absolute top-0.5 left-0.5 w-4 h-4 md:w-5 md:h-5 rounded-full bg-[#1c222e] border border-[#8c7f73] flex items-center justify-center text-white font-bold text-[8px] md:text-[10px] z-20">{mat.aeCost}</div>
                        <div className="relative z-10 p-1 flex flex-col h-full text-center justify-between">
-                         <div className="text-[7px] font-bold uppercase tracking-widest text-[#8c7f73] mt-1">{mat.format}</div>
-                         <div className="text-[#e3d0b3] font-bold text-[11px] leading-tight flex-1 flex items-center justify-center">{mat.name}</div>
+                         <div className="text-[6px] md:text-[7px] font-bold uppercase tracking-widest text-[#8c7f73] mt-0.5 md:mt-1">{mat.format}</div>
+                         <div className="text-[#e3d0b3] font-bold text-[9px] md:text-[11px] leading-tight flex-1 flex items-center justify-center">{mat.name}</div>
                          
                          {isRegen && (
-                           <div className={`text-[8px] font-bold border-t border-white/5 pt-0.5 ${isRegenLimitReached ? 'text-[#85200c]' : 'text-[#4a7c59]'}`}>
+                           <div className={`text-[6px] md:text-[8px] font-bold border-t border-white/5 pt-0.5 ${isRegenLimitReached ? 'text-[#85200c]' : 'text-[#4a7c59]'}`}>
                              REG: {regenTotalUsed}/2
                            </div>
                          )}
                          {!isRegen && (
-                           <div className="text-[8px] text-white/30 border-t border-white/5 pt-0.5">{mat.tier}</div>
+                           <div className="text-[6px] md:text-[8px] text-white/30 border-t border-white/5 pt-0.5">{mat.tier}</div>
                          )}
                        </div>
                      </div>
@@ -806,586 +798,396 @@ export default function ArenaPage() {
         </div>
       )}
 
-      {/* ================= 4. HASIL AKHIR DUEL ================= */}
-            {view === 'result' && duelData && arenaData && duelData.resultDetail && (
+      {/* ================= 4. HASIL AKHIR DUEL (POINT CALCULATION) ================= */}
+      {view === 'result' && duelData && arenaData && duelData.resultDetail && (
         <div className="w-full flex flex-col items-center">
           
           <style>{`
-            @keyframes winnerGlow {
-              0%, 100% { box-shadow: 0 0 15px 2px rgba(227, 208, 179, 0.4), inset 0 0 10px rgba(227, 208, 179, 0.2); border-color: #e3d0b3; }
-              50% { box-shadow: 0 0 30px 8px rgba(227, 208, 179, 0.8), inset 0 0 20px rgba(227, 208, 179, 0.5); border-color: #ffffff; }
-            }
-            @keyframes textShine {
-              0% { text-shadow: 0 0 5px rgba(227, 208, 179, 0.5); }
-              50% { text-shadow: 0 0 15px rgba(227, 208, 179, 1), 0 0 25px rgba(227, 208, 179, 0.8); }
-              100% { text-shadow: 0 0 5px rgba(227, 208, 179, 0.5); }
-            }
-            .winner-glow {
-              animation: winnerGlow 2s ease-in-out infinite;
-            }
-            .winner-text {
-              animation: textShine 2s ease-in-out infinite;
-              color: #ffffff !important;
-            }
+            @keyframes winnerGlow { 0%, 100% { box-shadow: 0 0 15px 2px rgba(227, 208, 179, 0.4), inset 0 0 10px rgba(227, 208, 179, 0.2); border-color: #e3d0b3; } 50% { box-shadow: 0 0 30px 8px rgba(227, 208, 179, 0.8), inset 0 0 20px rgba(227, 208, 179, 0.5); border-color: #ffffff; } }
+            @keyframes textShine { 0% { text-shadow: 0 0 5px rgba(227, 208, 179, 0.5); } 50% { text-shadow: 0 0 15px rgba(227, 208, 179, 1), 0 0 25px rgba(227, 208, 179, 0.8); } 100% { text-shadow: 0 0 5px rgba(227, 208, 179, 0.5); } }
+            .winner-glow { animation: winnerGlow 2s ease-in-out infinite; }
+            .winner-text { animation: textShine 2s ease-in-out infinite; color: #ffffff !important; }
           `}</style>
 
-          {/* WRAPPER TERLUAR */}
-          <div ref={resultRef} className="relative w-full max-w-[1250px] bg-[#1c222e] p-8 md:p-12 flex justify-center overflow-hidden">
-            
-            {/* BINGKAI EMAS UTAMA */}
-            <div className="relative w-full bg-[#1c222e] border-[4px] border-[#e3d0b3] px-10 py-16 font-sans shadow-2xl">
+          {/* WRAPPER UNTUK SCALE MOBILE */}
+          <div className="w-full flex justify-center overflow-x-auto custom-scrollbar pb-4 mt-2 md:mt-6">
+            <div className="relative w-[1250px] h-[300px] min-[390px]:h-[350px] sm:h-[600px] md:h-auto flex justify-center md:block">
               
-              {/* ORNAMEN SUDUT TIPIS */}
-              <div className="absolute top-0 left-0 w-24 h-12 border-r-[4px] border-b-[4px] border-[#1c222e] z-0 bg-[#e3d0b3] pointer-events-none"></div>
-              <div className="absolute top-0 right-0 w-12 h-24 border-l-[4px] border-b-[4px] border-[#1c222e] z-0 bg-[#e3d0b3] pointer-events-none"></div>
-              <div className="absolute bottom-0 left-0 w-12 h-24 border-r-[4px] border-t-[4px] border-[#1c222e] z-0 bg-[#e3d0b3] pointer-events-none"></div>
-              <div className="absolute bottom-0 right-0 w-24 h-12 border-l-[4px] border-t-[4px] border-[#1c222e] z-0 bg-[#e3d0b3] pointer-events-none"></div>
-
-              {/* Header */}
-              <h1 className="text-4xl font-bold text-center tracking-wider text-[#e3d0b3] -mt-1 mb-2">
-                Duel selesai — {duelData.winner === 'draw' ? 'SERI' : (duelData.winner === arenaData.myRole ? `${arenaData.license.name} MENANG!` : `${arenaData.opponent.name} MENANG!`)}
-              </h1>
-              
-              <div className="text-center text-[#cfc1a6] text-sm mb-10 pb-6 border-b border-[#8c7f73] border-dashed">
-                {duelData.resultDetail.reasonText}
-              </div>
-
-              {/* Profil Pemain */}
-              <div className="flex justify-center items-center gap-10 md:gap-20 px-4 mb-8">
-                
-                {/* PEMAIN A */}
-                <div className={`flex flex-col items-center w-[40%] max-w-[300px] transition-all duration-500 ${duelData.winner !== 'draw' && duelData.winner !== 'A' ? 'opacity-60 grayscale-[30%]' : 'opacity-100'}`}>
-                  <div className="relative mb-4">
-                    {duelData.winner !== 'draw' && (
-                      <div className={`absolute top-2 -right-8 z-20 px-6 py-1 transform rotate-45 shadow-md text-xs font-bold tracking-widest ${duelData.winner === 'A' ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-white'}`}>
-                        {duelData.winner === 'A' ? 'MENANG' : 'KALAH'}
-                      </div>
-                    )}
-                    <div className={`w-32 h-32 rounded-full border-4 p-1 relative z-10 bg-[#1c222e] overflow-hidden ${
-                      duelData.winner === 'A' ? 'border-[#e3d0b3] winner-glow' : 
-                      duelData.winner === 'draw' ? 'border-[#8c7f73]' : 
-                      'border-[#85200c] shadow-[0_0_15px_rgba(133,32,12,0.4)]'
-                    }`}>
-                      <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#8c7f73]">
-                        <defs>
-                          <pattern id="meander-res-a" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
-                            <path d="M0 5 h5 v-5 h5 v10 h-5 v-5 h-5 z" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                          </pattern>
-                        </defs>
-                        <circle cx="50" cy="50" r="46" fill="url(#meander-res-a)" stroke="currentColor" strokeWidth="3" />
-                      </svg>
-                      <img src={(arenaData.myRole === 'A' ? arenaData.license.photoUrl : arenaData.opponent.photoUrl) || BAKEMONO_IMG} alt="A" className="relative z-10 w-full h-full rounded-full object-cover bg-[#12161f]" crossOrigin="anonymous" />
-                      {duelData.winner !== 'draw' && duelData.winner !== 'A' && (
-                        <div className="absolute inset-0 bg-[#85200c]/30 mix-blend-multiply z-20 pointer-events-none"></div>
-                      )}
-                    </div>
-                  </div>
-                  <div className={`text-xl font-bold mb-1 text-center ${
-                    duelData.winner === 'A' ? 'text-[#e3d0b3] winner-text' : 
-                    duelData.winner === 'draw' ? 'text-[#e3d0b3]' : 
-                    'text-[#f0b9a8]'
-                  }`}>
-                    {duelData.a.name}
-                  </div>
-                  <div className="text-xs text-[#8c7f73] tracking-widest mb-4 text-center">ID: {duelData.a.id}</div>
+              <div id="result-scale-wrapper" className="origin-top scale-[0.25] min-[390px]:scale-[0.3] sm:scale-[0.45] md:scale-100 shrink-0">
+                <div ref={resultRef} className="relative w-[1250px] bg-[#1c222e] p-8 md:p-12 flex justify-center overflow-hidden">
                   
-                  <div className="w-full px-4">
-                    {/* BAR VP (KREM) */}
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] text-[#8c7f73] w-6">VP</span>
-                      <div className="flex-1 h-2.5 bg-[#12161f] border border-[#8c7f73]">
-                        <div className="h-full bg-[#e3d0b3]" style={{ width: `${(duelData.a.vp / (arenaData.myRole === 'A' ? arenaData.license.vp : arenaData.opponent.vp)) * 100}%` }}></div>
-                      </div>
-                      <span className="text-xs font-bold text-white w-6 text-right">{duelData.a.vp}</span>
+                  {/* BINGKAI EMAS UTAMA */}
+                  <div className="relative w-full bg-[#1c222e] border-[4px] border-[#e3d0b3] px-10 py-16 font-sans shadow-2xl">
+                    
+                    <div className="absolute top-0 left-0 w-24 h-12 border-r-[4px] border-b-[4px] border-[#1c222e] z-0 bg-[#e3d0b3] pointer-events-none"></div>
+                    <div className="absolute top-0 right-0 w-12 h-24 border-l-[4px] border-b-[4px] border-[#1c222e] z-0 bg-[#e3d0b3] pointer-events-none"></div>
+                    <div className="absolute bottom-0 left-0 w-12 h-24 border-r-[4px] border-t-[4px] border-[#1c222e] z-0 bg-[#e3d0b3] pointer-events-none"></div>
+                    <div className="absolute bottom-0 right-0 w-24 h-12 border-l-[4px] border-t-[4px] border-[#1c222e] z-0 bg-[#e3d0b3] pointer-events-none"></div>
+
+                    <h1 className="text-4xl font-bold text-center tracking-wider text-[#e3d0b3] -mt-1 mb-2">
+                      Duel selesai — {duelData.winner === 'draw' ? 'SERI' : (duelData.winner === arenaData.myRole ? `${arenaData.license.name} MENANG!` : `${arenaData.opponent.name} MENANG!`)}
+                    </h1>
+                    
+                    <div className="text-center text-[#cfc1a6] text-sm mb-10 pb-6 border-b border-[#8c7f73] border-dashed">
+                      {duelData.resultDetail.reasonText}
                     </div>
-                    {/* BAR AE (MERAH) */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-[#8c7f73] w-6">AE</span>
-                      <div className="flex-1 h-2.5 bg-[#12161f] border border-[#8c7f73]">
-                        <div className="h-full bg-[#85200c]" style={{ width: `${(duelData.a.ae / (arenaData.myRole === 'A' ? arenaData.license.ae : arenaData.opponent.ae)) * 100}%` }}></div>
+
+                    <div className="flex justify-center items-center gap-10 md:gap-20 px-4 mb-8">
+                      
+                      {/* PEMAIN A */}
+                      <div className={`flex flex-col items-center w-[40%] max-w-[300px] transition-all duration-500 ${duelData.winner !== 'draw' && duelData.winner !== 'A' ? 'opacity-60 grayscale-[30%]' : 'opacity-100'}`}>
+                        <div className="relative mb-4">
+                          {duelData.winner !== 'draw' && (
+                            <div className={`absolute top-2 -right-8 z-20 px-6 py-1 transform rotate-45 shadow-md text-xs font-bold tracking-widest ${duelData.winner === 'A' ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-white'}`}>
+                              {duelData.winner === 'A' ? 'MENANG' : 'KALAH'}
+                            </div>
+                          )}
+                          <div className={`w-32 h-32 rounded-full border-4 p-1 relative z-10 bg-[#1c222e] overflow-hidden ${duelData.winner === 'A' ? 'border-[#e3d0b3] winner-glow' : duelData.winner === 'draw' ? 'border-[#8c7f73]' : 'border-[#85200c] shadow-[0_0_15px_rgba(133,32,12,0.4)]'}`}>
+                            <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#8c7f73]"><defs><pattern id="meander-res-a" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M0 5 h5 v-5 h5 v10 h-5 v-5 h-5 z" fill="none" stroke="currentColor" strokeWidth="1.5" /></pattern></defs><circle cx="50" cy="50" r="46" fill="url(#meander-res-a)" stroke="currentColor" strokeWidth="3" /></svg>
+                            <img src={(arenaData.myRole === 'A' ? arenaData.license.photoUrl : arenaData.opponent.photoUrl) || BAKEMONO_IMG} alt="A" className="relative z-10 w-full h-full rounded-full object-cover bg-[#12161f]" crossOrigin="anonymous" />
+                            {duelData.winner !== 'draw' && duelData.winner !== 'A' && (<div className="absolute inset-0 bg-[#85200c]/30 mix-blend-multiply z-20 pointer-events-none"></div>)}
+                          </div>
+                        </div>
+                        <div className={`text-xl font-bold mb-1 text-center ${duelData.winner === 'A' ? 'text-[#e3d0b3] winner-text' : duelData.winner === 'draw' ? 'text-[#e3d0b3]' : 'text-[#f0b9a8]'}`}>{duelData.a.name}</div>
+                        <div className="text-xs text-[#8c7f73] tracking-widest mb-4 text-center">ID: {duelData.a.id}</div>
+                        
+                        <div className="w-full px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] text-[#8c7f73] w-6">VP</span>
+                            <div className="flex-1 h-2.5 bg-[#12161f] border border-[#8c7f73]"><div className="h-full bg-[#e3d0b3]" style={{ width: `${(duelData.a.vp / (arenaData.myRole === 'A' ? arenaData.license.vp : arenaData.opponent.vp)) * 100}%` }}></div></div>
+                            <span className="text-xs font-bold text-white w-6 text-right">{duelData.a.vp}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-[#8c7f73] w-6">AE</span>
+                            <div className="flex-1 h-2.5 bg-[#12161f] border border-[#8c7f73]"><div className="h-full bg-[#85200c]" style={{ width: `${(duelData.a.ae / (arenaData.myRole === 'A' ? arenaData.license.ae : arenaData.opponent.ae)) * 100}%` }}></div></div>
+                            <span className="text-xs font-bold text-white w-6 text-right">{duelData.a.ae}</span>
+                          </div>
+                        </div>
                       </div>
-                      <span className="text-xs font-bold text-white w-6 text-right">{duelData.a.ae}</span>
+
+                      <div className="text-4xl font-bold text-[#85200c] italic text-center px-4 shrink-0">VS</div>
+
+                      {/* PEMAIN B */}
+                      <div className={`flex flex-col items-center w-[40%] max-w-[300px] transition-all duration-500 ${duelData.winner !== 'draw' && duelData.winner !== 'B' ? 'opacity-60 grayscale-[30%]' : 'opacity-100'}`}>
+                        <div className="relative mb-4">
+                          {duelData.winner !== 'draw' && (
+                            <div className={`absolute top-2 -right-8 z-20 px-8 py-1 transform rotate-45 shadow-md text-xs font-bold tracking-widest ${duelData.winner === 'B' ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-white'}`}>
+                              {duelData.winner === 'B' ? 'MENANG' : 'KALAH'}
+                            </div>
+                          )}
+                          <div className={`w-32 h-32 rounded-full border-4 p-1 relative z-10 bg-[#1c222e] overflow-hidden ${duelData.winner === 'B' ? 'border-[#e3d0b3] winner-glow' : duelData.winner === 'draw' ? 'border-[#8c7f73]' : 'border-[#85200c] shadow-[0_0_15px_rgba(133,32,12,0.4)]'}`}>
+                            <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#8c7f73]"><defs><pattern id="meander-res-b" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M0 5 h5 v-5 h5 v10 h-5 v-5 h-5 z" fill="none" stroke="currentColor" strokeWidth="1.5" /></pattern></defs><circle cx="50" cy="50" r="46" fill="url(#meander-res-b)" stroke="currentColor" strokeWidth="3" /></svg>
+                            <img src={(arenaData.myRole === 'B' ? arenaData.license.photoUrl : arenaData.opponent.photoUrl) || BAKEMONO_IMG} alt="B" className="relative z-10 w-full h-full rounded-full object-cover bg-[#12161f]" crossOrigin="anonymous" />
+                            {duelData.winner !== 'draw' && duelData.winner !== 'B' && (<div className="absolute inset-0 bg-[#85200c]/30 mix-blend-multiply z-20 pointer-events-none"></div>)}
+                          </div>
+                        </div>
+                        <div className={`text-xl font-bold mb-1 text-center ${duelData.winner === 'B' ? 'text-[#e3d0b3] winner-text' : duelData.winner === 'draw' ? 'text-[#e3d0b3]' : 'text-[#f0b9a8]'}`}>{duelData.b.name}</div>
+                        <div className="text-xs text-[#8c7f73] tracking-widest mb-4 text-center">ID: {duelData.b.id}</div>
+                        
+                        <div className="w-full px-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-[10px] text-[#8c7f73] w-6">VP</span>
+                            <div className="flex-1 h-2.5 bg-[#12161f] border border-[#8c7f73]"><div className="h-full bg-[#e3d0b3]" style={{ width: `${(duelData.b.vp / (arenaData.myRole === 'B' ? arenaData.license.vp : arenaData.opponent.vp)) * 100}%` }}></div></div>
+                            <span className="text-xs font-bold text-white w-6 text-right">{duelData.b.vp}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-[#8c7f73] w-6">AE</span>
+                            <div className="flex-1 h-2.5 bg-[#12161f] border border-[#8c7f73]"><div className="h-full bg-[#85200c]" style={{ width: `${(duelData.b.ae / (arenaData.myRole === 'B' ? arenaData.license.ae : arenaData.opponent.ae)) * 100}%` }}></div></div>
+                            <span className="text-xs font-bold text-white w-6 text-right">{duelData.b.ae}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* EXP BREAKDOWN */}
+                    <div className="flex justify-between gap-20 md:gap-25 px-15 mt-8 font-mono">
+                      <div className="flex-1 border border-[#8c7f73] bg-[#12161f] p-5 relative flex flex-col">
+                        <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#e3d0b3]"></div>
+                        <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#e3d0b3]"></div>
+                        <div className="text-center text-sm text-[#cfc1a6] mb-3">
+                          (EXP Material Unik {duelData.resultDetail.a.totalMaterialExp} + Turn {duelData.resultDetail.a.turnCount}) ÷ Divisor {duelData.resultDetail.a.divisor} = <span className="text-[#e3d0b3] font-bold">{duelData.resultDetail.a.finalExp} EXP</span>
+                        </div>
+                        <div className="text-center text-[13px] text-[#8c7f73] tracking-widest uppercase mb-3">EXP</div>
+                        <div className="space-y-1 mb-4 flex-1">
+                          {(duelData.resultDetail.a.materials || []).map((m, idx) => (
+                            <div key={idx} className="flex justify-between text-sm text-[#cfc1a6] border-b border-[#8c7f73]/30 pb-1"><span>{m.name}</span><span>+{m.exp} EXP</span></div>
+                          ))}
+                          {duelData.resultDetail.a.materials.length === 0 && <div className="text-center text-[#8c7f73] text-sm">Tidak ada material</div>}
+                        </div>
+                        <div className="flex justify-between text-sm font-bold text-[#e3d0b3] border-t border-[#8c7f73] pt-3 mt-auto">
+                          <span>EXP +{duelData.resultDetail.a.finalExp}</span><span>CP +{duelData.resultDetail.a.finalCp}</span><span>GT +{duelData.resultDetail.a.gt}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex-1 border border-[#8c7f73] bg-[#12161f] p-5 relative flex flex-col">
+                        <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#e3d0b3]"></div>
+                        <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#e3d0b3]"></div>
+                        <div className="text-center text-sm text-[#cfc1a6] mb-3">
+                          (EXP Material Unik {duelData.resultDetail.b.totalMaterialExp} + Turn {duelData.resultDetail.b.turnCount}) ÷ Divisor {duelData.resultDetail.b.divisor} = <span className="text-[#e3d0b3] font-bold">{duelData.resultDetail.b.finalExp} EXP</span>
+                        </div>
+                        <div className="text-center text-[13px] text-[#8c7f73] tracking-widest uppercase mb-3">EXP</div>
+                        <div className="space-y-1 mb-4 flex-1">
+                          {(duelData.resultDetail.b.materials || []).map((m, idx) => (
+                            <div key={idx} className="flex justify-between text-sm text-[#cfc1a6] border-b border-[#8c7f73]/30 pb-1"><span>{m.name}</span><span>+{m.exp} EXP</span></div>
+                          ))}
+                          {duelData.resultDetail.b.materials.length === 0 && <div className="text-center text-[#8c7f73] text-sm">Tidak ada material</div>}
+                        </div>
+                        <div className="flex justify-between text-sm font-bold text-[#e3d0b3] border-t border-[#8c7f73] pt-3 mt-auto">
+                          <span>EXP +{duelData.resultDetail.b.finalExp}</span><span>CP +{duelData.resultDetail.b.finalCp}</span><span>GT +{duelData.resultDetail.b.gt}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-center text-[13px] text-[#8c7f73] tracking-widest uppercase mt-10 border-t border-[#8c7f73] border-dashed pt-4">
+                      DUEL SELESAI: {new Date(duelData.updatedAt || Date.now()).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date(duelData.updatedAt || Date.now()).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})} WIB
                     </div>
                   </div>
                 </div>
-
-                <div className="text-4xl font-bold text-[#85200c] italic text-center px-4 shrink-0">VS</div>
-
-                {/* PEMAIN B */}
-                <div className={`flex flex-col items-center w-[40%] max-w-[300px] transition-all duration-500 ${duelData.winner !== 'draw' && duelData.winner !== 'B' ? 'opacity-60 grayscale-[30%]' : 'opacity-100'}`}>
-                  <div className="relative mb-4">
-                    {duelData.winner !== 'draw' && (
-                      <div className={`absolute top-2 -right-8 z-20 px-8 py-1 transform rotate-45 shadow-md text-xs font-bold tracking-widest ${duelData.winner === 'B' ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-white'}`}>
-                        {duelData.winner === 'B' ? 'MENANG' : 'KALAH'}
-                      </div>
-                    )}
-                    <div className={`w-32 h-32 rounded-full border-4 p-1 relative z-10 bg-[#1c222e] overflow-hidden ${
-                      duelData.winner === 'B' ? 'border-[#e3d0b3] winner-glow' : 
-                      duelData.winner === 'draw' ? 'border-[#8c7f73]' : 
-                      'border-[#85200c] shadow-[0_0_15px_rgba(133,32,12,0.4)]'
-                    }`}>
-                      <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#8c7f73]">
-                        <defs>
-                          <pattern id="meander-res-b" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
-                            <path d="M0 5 h5 v-5 h5 v10 h-5 v-5 h-5 z" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                          </pattern>
-                        </defs>
-                        <circle cx="50" cy="50" r="46" fill="url(#meander-res-b)" stroke="currentColor" strokeWidth="3" />
-                      </svg>
-                      <img src={(arenaData.myRole === 'B' ? arenaData.license.photoUrl : arenaData.opponent.photoUrl) || BAKEMONO_IMG} alt="B" className="relative z-10 w-full h-full rounded-full object-cover bg-[#12161f]" crossOrigin="anonymous" />
-                      {duelData.winner !== 'draw' && duelData.winner !== 'B' && (
-                        <div className="absolute inset-0 bg-[#85200c]/30 mix-blend-multiply z-20 pointer-events-none"></div>
-                      )}
-                    </div>
-                  </div>
-                  <div className={`text-xl font-bold mb-1 text-center ${
-                    duelData.winner === 'B' ? 'text-[#e3d0b3] winner-text' : 
-                    duelData.winner === 'draw' ? 'text-[#e3d0b3]' : 
-                    'text-[#f0b9a8]'
-                  }`}>
-                    {duelData.b.name}
-                  </div>
-                  <div className="text-xs text-[#8c7f73] tracking-widest mb-4 text-center">ID: {duelData.b.id}</div>
-                  
-                  <div className="w-full px-4">
-                    {/* BAR VP (KREM) */}
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-[10px] text-[#8c7f73] w-6">VP</span>
-                      <div className="flex-1 h-2.5 bg-[#12161f] border border-[#8c7f73]">
-                        <div className="h-full bg-[#e3d0b3]" style={{ width: `${(duelData.b.vp / (arenaData.myRole === 'B' ? arenaData.license.vp : arenaData.opponent.vp)) * 100}%` }}></div>
-                      </div>
-                      <span className="text-xs font-bold text-white w-6 text-right">{duelData.b.vp}</span>
-                    </div>
-                    {/* BAR AE (MERAH) */}
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-[#8c7f73] w-6">AE</span>
-                      <div className="flex-1 h-2.5 bg-[#12161f] border border-[#8c7f73]">
-                        <div className="h-full bg-[#85200c]" style={{ width: `${(duelData.b.ae / (arenaData.myRole === 'B' ? arenaData.license.ae : arenaData.opponent.ae)) * 100}%` }}></div>
-                      </div>
-                      <span className="text-xs font-bold text-white w-6 text-right">{duelData.b.ae}</span>
-                    </div>
-                  </div>
-                </div>
-
               </div>
-
-              {/* KOTAK EXP BREAKDOWN (FONT MONO) */}
-              <div className="flex justify-between gap-20 md:gap-25 px-15 mt-8 font-mono">
-                
-                {/* BOX A */}
-                <div className="flex-1 border border-[#8c7f73] bg-[#12161f] p-5 relative flex flex-col">
-                  <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#e3d0b3]"></div>
-                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#e3d0b3]"></div>
-                  
-                  <div className="text-center text-sm text-[#cfc1a6] mb-3">
-                    (EXP Material Unik {duelData.resultDetail.a.totalMaterialExp} + Turn {duelData.resultDetail.a.turnCount}) ÷ Divisor {duelData.resultDetail.a.divisor} = <span className="text-[#e3d0b3] font-bold">{duelData.resultDetail.a.finalExp} EXP</span>
-                  </div>
-                  <div className="text-center text-[13px] text-[#8c7f73] tracking-widest uppercase mb-3">EXP</div>
-                  
-                  <div className="space-y-1 mb-4 flex-1">
-                    {(duelData.resultDetail.a.materials || []).map((m, idx) => (
-                      <div key={idx} className="flex justify-between text-sm text-[#cfc1a6] border-b border-[#8c7f73]/30 pb-1">
-                        <span>{m.name}</span>
-                        <span>+{m.exp} EXP</span>
-                      </div>
-                    ))}
-                    {duelData.resultDetail.a.materials.length === 0 && <div className="text-center text-[#8c7f73] text-sm">Tidak ada material</div>}
-                  </div>
-
-                  <div className="flex justify-between text-sm font-bold text-[#e3d0b3] border-t border-[#8c7f73] pt-3 mt-auto">
-                    <span>EXP +{duelData.resultDetail.a.finalExp}</span>
-                    <span>CP +{duelData.resultDetail.a.finalCp}</span>
-                    <span>GT +{duelData.resultDetail.a.gt}</span>
-                  </div>
-                </div>
-
-                {/* BOX B */}
-                <div className="flex-1 border border-[#8c7f73] bg-[#12161f] p-5 relative flex flex-col">
-                  <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#e3d0b3]"></div>
-                  <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#e3d0b3]"></div>
-                  
-                  <div className="text-center text-sm text-[#cfc1a6] mb-3">
-                    (EXP Material Unik {duelData.resultDetail.b.totalMaterialExp} + Turn {duelData.resultDetail.b.turnCount}) ÷ Divisor {duelData.resultDetail.b.divisor} = <span className="text-[#e3d0b3] font-bold">{duelData.resultDetail.b.finalExp} EXP</span>
-                  </div>
-                  <div className="text-center text-[13px] text-[#8c7f73] tracking-widest uppercase mb-3">EXP</div>
-                  
-                  <div className="space-y-1 mb-4 flex-1">
-                    {(duelData.resultDetail.b.materials || []).map((m, idx) => (
-                      <div key={idx} className="flex justify-between text-sm text-[#cfc1a6] border-b border-[#8c7f73]/30 pb-1">
-                        <span>{m.name}</span>
-                        <span>+{m.exp} EXP</span>
-                      </div>
-                    ))}
-                    {duelData.resultDetail.b.materials.length === 0 && <div className="text-center text-[#8c7f73] text-sm">Tidak ada material</div>}
-                  </div>
-
-                  <div className="flex justify-between text-sm font-bold text-[#e3d0b3] border-t border-[#8c7f73] pt-3 mt-auto">
-                    <span>EXP +{duelData.resultDetail.b.finalExp}</span>
-                    <span>CP +{duelData.resultDetail.b.finalCp}</span>
-                    <span>GT +{duelData.resultDetail.b.gt}</span>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Footer Tanggal */}
-              <div className="text-center text-[13px] text-[#8c7f73] tracking-widest uppercase mt-10 border-t border-[#8c7f73] border-dashed pt-4">
-                DUEL SELESAI: {new Date(duelData.updatedAt || Date.now()).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date(duelData.updatedAt || Date.now()).toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})} WIB
-              </div>
-
             </div>
           </div>
 
           {/* Tombol Aksi */}
-          <div className="flex flex-wrap justify-center gap-4 mt-6 mb-10 w-full max-w-[1250px]">
-            <button 
-              onClick={downloadResultImage} 
-              disabled={isDownloadingResult} 
-              className="bg-[#1C2330] border-2 border-[#e3d0b3] text-[#e3d0b3] px-6 py-2.5 text-xs font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          <div className="flex flex-wrap justify-center gap-3 md:gap-4 mt-2 md:mt-6 mb-10 w-full max-w-[1250px]">
+            <button onClick={downloadResultImage} disabled={isDownloadingResult} className="bg-[#1C2330] border border-[#e3d0b3] md:border-2 text-[#e3d0b3] px-4 py-2 md:px-6 md:py-2.5 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2">
+              <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
               {isDownloadingResult ? 'MENYIMPAN...' : 'SIMPAN HASIL'}
             </button>
 
             {canContinueDuel ? (
-              <button 
-                onClick={() => handleFinalizeDuel('arena')}
-                className="bg-[#e3d0b3] text-[#1c222e] px-6 py-2.5 text-xs font-bold tracking-widest uppercase hover:bg-white transition-all shadow-lg"
-              >
-                LANJUT DUEL
-              </button>
+              <button onClick={() => handleFinalizeDuel('arena')} className="bg-[#e3d0b3] text-[#1c222e] px-4 py-2 md:px-6 md:py-2.5 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-white transition-all shadow-lg">LANJUT DUEL</button>
             ) : (
-              <button disabled className="bg-[#e3d0b3]/50 text-[#1c222e]/50 px-6 py-2.5 text-xs font-bold tracking-widest uppercase cursor-not-allowed border border-transparent">
-                BATAS HARIAN TERCAPAI
-              </button>
+              <button disabled className="bg-[#e3d0b3]/50 text-[#1c222e]/50 px-4 py-2 md:px-6 md:py-2.5 text-[10px] md:text-xs font-bold tracking-widest uppercase cursor-not-allowed border border-transparent">BATAS HARIAN TERCAPAI</button>
             )}
 
-            <button 
-              onClick={() => handleFinalizeDuel('dashboard')} 
-              className="bg-[#85200c] border-2 border-[#85200c] text-white px-6 py-2.5 text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-all shadow-lg"
-            >
-              SELESAIKAN DUEL
-            </button>
+            <button onClick={() => handleFinalizeDuel('dashboard')} className="bg-[#85200c] border border-[#85200c] md:border-2 text-white px-4 py-2 md:px-6 md:py-2.5 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-all shadow-lg">SELESAIKAN DUEL</button>
           </div>
 
         </div>
       )}
 
-      {/* ================= MODAL DATA MATCH ================= */}
+      {/* ================= MODAL DATA MATCH (PRE-COMBAT) ================= */}
       {showMatchData && arenaData && duelData && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 bg-[#0a0d14] overflow-y-auto custom-scrollbar">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-2 md:p-4 bg-[#0a0d14] overflow-y-auto custom-scrollbar">
           
-          <div className="fixed top-6 right-6 md:right-12 z-[60] flex gap-3">
-            <button onClick={downloadMatchData} disabled={isDownloading} className="bg-[#12161f] border border-[#e3d0b3] text-[#e3d0b3] px-4 py-1.5 text-xs font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1c222e] transition-colors">
+          <div className="fixed top-2 right-2 md:top-6 md:right-12 z-[60] flex gap-2 md:gap-3">
+            <button onClick={downloadMatchData} disabled={isDownloading} className="bg-[#12161f] border border-[#e3d0b3] text-[#e3d0b3] px-3 py-1 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1c222e] transition-colors">
               {isDownloading ? 'Menyimpan...' : 'Simpan Gambar'}
             </button>
-            <button onClick={() => setShowMatchData(false)} className="bg-[#85200c] border border-[#85200c] text-white px-4 py-1.5 text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-colors">
-              ✕ TUTUP
-            </button>
+            <button onClick={() => setShowMatchData(false)} className="bg-[#85200c] border border-[#85200c] text-white px-3 py-1 text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-colors">✕ TUTUP</button>
           </div>
 
-          <div ref={matchDataRef} className="relative w-full max-w-[1500px] bg-[#0f141c] py-10 pl-20 pr-10 my-16 flex justify-center overflow-hidden">
-            
-            <div className="absolute top-0 bottom-0 left-6 flex flex-col justify-around py-10 z-0">
-               {[1,2,3,4,5,6,7,8,9].map(i => (
-                  <div key={i} className="w-8 h-8 bg-[#e3d0b3] rotate-45 shadow-sm" />
-               ))}
-            </div>
-
-            <div className="relative w-full bg-[#1c222e] border-[6px] border-[#e3d0b3] p-8 md:p-10 z-10 shadow-2xl">
+          {/* Wrapper Scale untuk Modal */}
+          <div className="w-full flex justify-center overflow-x-auto custom-scrollbar mt-12 md:mt-16">
+            <div className="relative w-[1500px] h-[350px] min-[390px]:h-[450px] sm:h-[800px] md:h-auto flex justify-center md:block">
               
-              <div className="absolute top-0 left-0 w-24 h-12 border-r-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-              <div className="absolute top-0 right-0 w-16 h-24 border-l-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-              <div className="absolute bottom-0 left-0 w-16 h-24 border-r-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-              <div className="absolute bottom-0 right-0 w-24 h-12 border-l-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-              
-              <div className="absolute top-6 right-24 flex gap-1 z-20">
-                {[1,2,3,4,5,6,7].map(i => (
-                  <div key={i} className="w-3 h-8 bg-[#8c7f73] transform -skew-x-[30deg]"></div>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-4 mb-6 relative z-10">
-                <img src={LOGO_MAHOUTOKORO} alt="Mahoutokoro" className="h-16 object-contain" crossOrigin="anonymous" />
-                <div className="flex flex-col">
-                  <span className="text-[#8c7f73] font-bold text-[10px] tracking-[3px]">MAHOUTOKORO</span>
-                  <span className="text-[#e3d0b3] font-bold text-3xl tracking-widest leading-none">COMBAT</span>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 mb-2 relative z-10">
-                <div className="bg-[#e3d0b3] text-[#1c222e] font-bold text-sm px-4 py-2 uppercase tracking-wide">
-                  Personal Data Section
-                </div>
-                <div className="flex-1 border-b border-[#e3d0b3] h-0"></div>
-                <div className="text-right">
-                  <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">POINT</div>
-                  <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">SECTION</div>
-                </div>
-                <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] font-bold px-4 py-2 text-sm">
-                  {arenaData.license.exp} EXP
-                </div>
-                <div className="font-bold text-xl px-8 py-2 uppercase tracking-widest text-[#1c222e]" style={{ backgroundColor: '#c59968' }}>
-                  {arenaData.license.tier}
-                </div>
-              </div>
-
-              <div className="mb-8 w-full relative z-10">
-                <div className="flex justify-between text-[10px] text-[#8c7f73] mb-1 px-1">
-                  <span>{arenaData.license.tierProgress?.expToNext || 0} EXP LAGI KE {arenaData.license.tierProgress?.nextTier?.toUpperCase() || 'MAX'}</span>
-                  <span>{arenaData.license.tierProgress?.pct || 100}%</span>
-                </div>
-                <div className="w-full h-2.5 border border-[#8c7f73] border-dashed bg-[#12161f] relative">
-                  <div className="h-full bg-[#e3d0b3]" style={{ width: `${arenaData.license.tierProgress?.pct || 100}%` }}></div>
-                  <div className="absolute inset-0 flex justify-between px-1">
-                     {[...Array(40)].map((_, i) => <div key={i} className="w-px h-full bg-[#1c222e] opacity-20"></div>)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10">
-                
-                <div className="lg:col-span-4 flex flex-col items-center">
-                  <div className="w-full text-left text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">SUMMON SECTION</div>
+              <div id="matchdata-scale-wrapper" className="origin-top scale-[0.22] min-[390px]:scale-[0.28] sm:scale-[0.45] md:scale-100 shrink-0">
+                <div ref={matchDataRef} className="relative w-[1500px] bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden">
                   
-                  <div className="relative w-full flex justify-center items-center mb-6 py-4">
-                    <img src={BAKEMONO_IMG} alt="Bakemono" className="absolute left-4 w-16 h-16 object-contain z-20 opacity-90" crossOrigin="anonymous"/>
-                    <div className="relative w-48 h-48 flex items-center justify-center">
-                       <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#e3d0b3]">
-                          <defs>
-                            <pattern id="meander" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
-                              <path d="M0 5 h5 v-5 h5 v10 h-5 v-5 h-5 z" fill="none" stroke="currentColor" strokeWidth="1" />
-                            </pattern>
-                          </defs>
-                          <circle cx="50" cy="50" r="48" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="4 2" />
-                          <circle cx="50" cy="50" r="43" fill="none" stroke="currentColor" strokeWidth="3" />
-                          <circle cx="50" cy="50" r="40" fill="url(#meander)" stroke="currentColor" strokeWidth="2" />
-                       </svg>
-                       <img src={arenaData.license.photoUrl} alt="Foto" className="relative z-10 w-[72%] h-[72%] rounded-full object-cover bg-[#12161f]" crossOrigin="anonymous" />
+                  <div className="absolute top-0 bottom-0 left-6 flex flex-col justify-around py-10 z-0">
+                     {[1,2,3,4,5,6,7,8,9].map(i => (<div key={i} className="w-8 h-8 bg-[#e3d0b3] rotate-45 shadow-sm" />))}
+                  </div>
+
+                  <div className="relative w-full bg-[#1c222e] border-[6px] border-[#e3d0b3] p-8 md:p-10 z-10 shadow-2xl">
+                    <div className="absolute top-0 left-0 w-24 h-12 border-r-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
+                    <div className="absolute top-0 right-0 w-16 h-24 border-l-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
+                    <div className="absolute bottom-0 left-0 w-16 h-24 border-r-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
+                    <div className="absolute bottom-0 right-0 w-24 h-12 border-l-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
+                    
+                    <div className="absolute top-6 right-24 flex gap-1 z-20">
+                      {[1,2,3,4,5,6,7].map(i => (<div key={i} className="w-3 h-8 bg-[#8c7f73] transform -skew-x-[30deg]"></div>))}
                     </div>
-                  </div>
 
-                  <div className="w-full bg-[#e3d0b3] text-[#1c222e] p-4 relative mb-6" style={{ clipPath: 'polygon(20px 0, 100% 0, 100% 100%, 0 100%, 0 20px)' }}>
-                    <div className="font-bold text-2xl mb-1">{arenaData.license.name}</div>
-                    <div className="font-bold text-sm opacity-70">{arenaData.license.id}</div>
-                  </div>
-
-                  <div className="w-full border border-[#8c7f73] border-dashed p-4 relative mb-6">
-                    <div className="text-[10px] text-[#e3d0b3] font-bold tracking-widest mb-3">ENEMY SECTION</div>
-                    <div className="flex items-center gap-4 mb-3">
-                      <img src={arenaData.opponent.photoUrl} alt="Opponent" className="w-16 h-16 rounded-full border border-[#8c7f73] object-cover bg-[#12161f]" crossOrigin="anonymous" />
-                      <div>
-                        <div className="text-[#e3d0b3] font-bold text-sm">{arenaData.opponent.name}</div>
-                        <div className="text-[#8c7f73] text-[10px]">ID: {arenaData.opponent.id}</div>
-                        <div className="text-[#8c7f73] text-[10px] uppercase">TIER: {arenaData.opponent.tier}</div>
+                    <div className="flex items-center gap-4 mb-6 relative z-10">
+                      <img src={LOGO_MAHOUTOKORO} alt="Mahoutokoro" className="h-16 object-contain" crossOrigin="anonymous" />
+                      <div className="flex flex-col">
+                        <span className="text-[#8c7f73] font-bold text-[10px] tracking-[3px]">MAHOUTOKORO</span>
+                        <span className="text-[#e3d0b3] font-bold text-3xl tracking-widest leading-none">COMBAT</span>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">AE {arenaData.opponent.ae}</div>
-                      <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">VP {arenaData.opponent.vp}</div>
-                    </div>
-                  </div>
 
-                  <div className="w-full">
-                    <div className="text-[10px] text-[#8c7f73] font-bold mb-2">STATISTIK LAWAN - TOTAL {arenaData.opponent.totalDuel || 0} DUEL</div>
-                    <div className="space-y-1.5">
-                      {['win', 'draw', 'lose'].map((label) => {
-                        const val = arenaData.opponent.stats?.[label] || 0;
-                        const color = label === 'win' ? '#e3d0b3' : label === 'lose' ? '#85200c' : '#8c7f73';
-                        return (
-                          <div key={label} className="flex items-center gap-2">
-                            <span className="text-[9px] text-[#8c7f73] w-8 uppercase">{label}</span>
-                            <div className="flex-1 h-1.5 bg-[#12161f] border border-[#8c7f73]">
-                              <div className="h-full" style={{ width: `${val}%`, backgroundColor: color }}></div>
-                            </div>
-                            <span className="text-[9px] text-[#e3d0b3] w-8 text-right">{val}%</span>
-                          </div>
-                        )
-                      })}
+                    <div className="flex flex-wrap items-center gap-4 mb-2 relative z-10">
+                      <div className="bg-[#e3d0b3] text-[#1c222e] font-bold text-sm px-4 py-2 uppercase tracking-wide">Personal Data Section</div>
+                      <div className="flex-1 border-b border-[#e3d0b3] h-0"></div>
+                      <div className="text-right">
+                        <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">POINT</div>
+                        <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">SECTION</div>
+                      </div>
+                      <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] font-bold px-4 py-2 text-sm">{arenaData.license.exp} EXP</div>
+                      <div className="font-bold text-xl px-8 py-2 uppercase tracking-widest text-[#1c222e]" style={{ backgroundColor: '#c59968' }}>{arenaData.license.tier}</div>
                     </div>
-                  </div>
 
-                  <div className="mt-8 flex flex-col items-center w-full">
-                     <svg className="w-[80%] h-10 mb-2 opacity-80" preserveAspectRatio="none" viewBox="0 0 100 20">
-                        {[...Array(40)].map((_, i) => (
-                          <rect key={i} x={i * 2.5} y="0" width={i % 3 === 0 ? "1.5" : "0.8"} height="20" fill="#e3d0b3" />
-                        ))}
-                     </svg>
-                    <div className="flex items-center gap-2">
-                      <img src={LOGO_MINISTRY} className="w-6 h-6 object-contain" alt="Seal" crossOrigin="anonymous" />
-                      <div className="text-[8px] font-bold tracking-widest text-[#8c7f73] text-center">
-                        <div>JAPANESE MINISTRY OF MAGIC</div>
-                        <div>COMBAT OFFICE ©2026</div>
+                    <div className="mb-8 w-full relative z-10">
+                      <div className="flex justify-between text-[10px] text-[#8c7f73] mb-1 px-1">
+                        <span>{arenaData.license.tierProgress?.expToNext || 0} EXP LAGI KE {arenaData.license.tierProgress?.nextTier?.toUpperCase() || 'MAX'}</span>
+                        <span>{arenaData.license.tierProgress?.pct || 100}%</span>
+                      </div>
+                      <div className="w-full h-2.5 border border-[#8c7f73] border-dashed bg-[#12161f] relative">
+                        <div className="h-full bg-[#e3d0b3]" style={{ width: `${arenaData.license.tierProgress?.pct || 100}%` }}></div>
+                        <div className="absolute inset-0 flex justify-between px-1">
+                           {[...Array(40)].map((_, i) => <div key={i} className="w-px h-full bg-[#1c222e] opacity-20"></div>)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="lg:col-span-4 flex flex-col">
-                  <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">BASIC ENERGY</div>
-                  
-                  <div className="flex flex-col gap-2 mb-8">
-                    <div className="flex border border-[#8c7f73] bg-[#12161f] h-14">
-                      <div className="bg-[#e3d0b3] text-[#1c222e] w-14 flex items-center justify-center font-bold text-lg relative">
-                        <div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-6"></div> AE
-                      </div>
-                      <div className="flex-1 flex items-center px-6 text-[#e3d0b3] text-2xl font-bold">{arenaData.license.ae}</div>
-                    </div>
-                    <div className="flex border border-[#8c7f73] bg-[#12161f] h-14 justify-end">
-                      <div className="flex-1 flex items-center px-6 text-[#e3d0b3] text-2xl font-bold justify-end">{arenaData.license.vp}</div>
-                      <div className="bg-[#e3d0b3] text-[#1c222e] w-14 flex items-center justify-center font-bold text-lg relative">
-                        <div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-6"></div> VP
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">COMBAT STYLE</div>
-                  <div className="grid grid-cols-2 gap-2 mb-8">
-                     <div className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
-                        <span className="text-[#e3d0b3] text-[10px] font-bold">SPELLCRAFT</span>
-                        <div className="w-5 h-5 bg-[#e3d0b3] text-[#1c222e] flex items-center justify-center text-[10px] font-bold rounded-sm">✓</div>
-                     </div>
-                     <div className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
-                        <span className="text-[#e3d0b3] text-[10px] font-bold">ARMAMENT</span>
-                        <div className="w-5 h-5 bg-[#85200c] text-[#e3d0b3] flex items-center justify-center text-[10px] font-bold rounded-sm">🔒</div>
-                     </div>
-                     <div className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
-                        <span className="text-[#e3d0b3] text-[10px] font-bold">ALCHEMIA</span>
-                        <div className="w-5 h-5 bg-[#85200c] text-[#e3d0b3] flex items-center justify-center text-[10px] font-bold rounded-sm">✕</div>
-                     </div>
-                     <div className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
-                        <span className="text-[#e3d0b3] text-[10px] font-bold">RELICIUM</span>
-                        <div className="w-5 h-5 bg-[#85200c] text-[#e3d0b3] flex items-center justify-center text-[10px] font-bold rounded-sm">✕</div>
-                     </div>
-                     <div className="col-span-2 flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
-                        <span className="text-[#e3d0b3] text-[10px] font-bold">COMBINATION</span>
-                        <div className="w-5 h-5 bg-[#85200c] text-[#e3d0b3] flex items-center justify-center text-[10px] font-bold rounded-sm">🔒</div>
-                     </div>
-                  </div>
-
-                  <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">COMBAT STATISTICS</div>
-                  <div className="space-y-4 mb-8">
-                    {['win', 'draw', 'lose'].map((label) => {
-                      const val = arenaData.license.stats?.[label] || 0;
-                      const color = label === 'win' ? '#e3d0b3' : label === 'lose' ? '#85200c' : '#8c7f73';
-                      return (
-                        <div key={label}>
-                          <div className="flex justify-between text-[10px] text-[#8c7f73] font-bold mb-1">
-                            <div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }}></div>{label.toUpperCase()}</div>
-                            <span>{val}%</span>
-                          </div>
-                          <div className="w-full h-2 bg-[#12161f] border border-[#8c7f73] border-dashed">
-                            <div className="h-full" style={{ width: `${val}%`, backgroundColor: color }}></div>
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 relative z-10">
+                      
+                      <div className="lg:col-span-4 flex flex-col items-center">
+                        <div className="w-full text-left text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">SUMMON SECTION</div>
+                        
+                        <div className="relative w-full flex justify-center items-center mb-6 py-4">
+                          <img src={BAKEMONO_IMG} alt="Bakemono" className="absolute left-4 w-16 h-16 object-contain z-20 opacity-90" crossOrigin="anonymous"/>
+                          <div className="relative w-48 h-48 flex items-center justify-center">
+                             <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#e3d0b3]">
+                                <defs><pattern id="meander" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M0 5 h5 v-5 h5 v10 h-5 v-5 h-5 z" fill="none" stroke="currentColor" strokeWidth="1" /></pattern></defs>
+                                <circle cx="50" cy="50" r="48" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="4 2" />
+                                <circle cx="50" cy="50" r="43" fill="none" stroke="currentColor" strokeWidth="3" />
+                                <circle cx="50" cy="50" r="40" fill="url(#meander)" stroke="currentColor" strokeWidth="2" />
+                             </svg>
+                             <img src={arenaData.license.photoUrl} alt="Foto" className="relative z-10 w-[72%] h-[72%] rounded-full object-cover bg-[#12161f]" crossOrigin="anonymous" />
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
-                  <div className="text-center text-[10px] text-[#8c7f73] border-t border-[#8c7f73] border-dashed pt-2 mb-6">TOTAL: {arenaData.license.totalDuel} DUEL</div>
 
-                  <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">TURN SECTION</div>
-                  
-                  <div className="border border-[#8c7f73] bg-[#12161f] p-4 relative mt-2">
-                    <div className="absolute top-[30px] left-[10%] right-[10%] h-[1px] bg-[#8c7f73] z-0"></div>
+                        <div className="w-full bg-[#e3d0b3] text-[#1c222e] p-4 relative mb-6" style={{ clipPath: 'polygon(20px 0, 100% 0, 100% 100%, 0 100%, 0 20px)' }}>
+                          <div className="font-bold text-2xl mb-1">{arenaData.license.name}</div>
+                          <div className="font-bold text-sm opacity-70">{arenaData.license.id}</div>
+                        </div>
 
-                    <div className="flex justify-between items-start relative z-10">
-                      {[1,2,3].map((num) => {
-                        const isCurrent = duelData.duelNumber === num || num === 2;
-                        const isDone = num < 2;
-                        return (
-                          <div key={num} className="flex flex-col items-center w-1/3">
-                            <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold mb-2 bg-[#12161f] ${isCurrent ? 'border-[#e3d0b3] text-[#e3d0b3]' : 'border-[#8c7f73] text-[#8c7f73]'}`}>
-                              {isDone ? '✓' : num}
-                            </div>
-                            <div className="text-[10px] text-[#e3d0b3] font-bold mb-1">DUEL {num}</div>
-                            <div className="text-[8px] text-[#8c7f73] text-center uppercase whitespace-nowrap">Lawan mulai duluan</div>
-                            <div className={`text-[8px] mt-1 font-bold ${isCurrent ? 'text-[#e3d0b3]' : 'text-[#85200c]'}`}>
-                              {isDone ? 'SELESAI' : isCurrent ? 'BERJALAN' : 'BELUM MULAI'}
+                        <div className="w-full border border-[#8c7f73] border-dashed p-4 relative mb-6">
+                          <div className="text-[10px] text-[#e3d0b3] font-bold tracking-widest mb-3">ENEMY SECTION</div>
+                          <div className="flex items-center gap-4 mb-3">
+                            <img src={arenaData.opponent.photoUrl} alt="Opponent" className="w-16 h-16 rounded-full border border-[#8c7f73] object-cover bg-[#12161f]" crossOrigin="anonymous" />
+                            <div>
+                              <div className="text-[#e3d0b3] font-bold text-sm">{arenaData.opponent.name}</div>
+                              <div className="text-[#8c7f73] text-[10px]">ID: {arenaData.opponent.id}</div>
+                              <div className="text-[#8c7f73] text-[10px] uppercase">TIER: {arenaData.opponent.tier}</div>
                             </div>
                           </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </div>
+                          <div className="flex gap-2">
+                            <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">AE {arenaData.opponent.ae}</div>
+                            <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">VP {arenaData.opponent.vp}</div>
+                          </div>
+                        </div>
 
-                <div className="lg:col-span-4 flex flex-col">
-                  <div className="w-full flex justify-end mb-4">
-                     <div className="bg-[#f4e8d3] text-[#1c222e] text-center font-bold py-2 px-8 relative" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 15px 100%, 0 calc(100% - 15px))' }}>
-                        <span className="text-sm tracking-widest">
-                           {arenaData.duel[arenaData.myRole.toLowerCase()].style?.toUpperCase() || 'SPELLCRAFT'}
-                        </span>
-                     </div>
-                  </div>
+                        <div className="mt-8 flex flex-col items-center w-full">
+                           <svg className="w-[80%] h-10 mb-2 opacity-80" preserveAspectRatio="none" viewBox="0 0 100 20">
+                              {[...Array(40)].map((_, i) => (<rect key={i} x={i * 2.5} y="0" width={i % 3 === 0 ? "1.5" : "0.8"} height="20" fill="#e3d0b3" />))}
+                           </svg>
+                          <div className="flex items-center gap-2">
+                            <img src={LOGO_MINISTRY} className="w-6 h-6 object-contain" alt="Seal" crossOrigin="anonymous" />
+                            <div className="text-[8px] font-bold tracking-widest text-[#8c7f73] text-center"><div>JAPANESE MINISTRY OF MAGIC</div><div>COMBAT OFFICE ©2026</div></div>
+                          </div>
+                        </div>
+                      </div>
 
-                  <div className="text-[#8c7f73] text-[10px] font-bold text-right mb-3">
-                    {selectedMaterials.length || (duelData[arenaData.myRole.toLowerCase()].deck || []).length} / {TIER_DECK_LIMIT[arenaData.license.tier] || 5} MATERIAL (DECK TERKUNCI)
-                  </div>
+                      <div className="lg:col-span-4 flex flex-col">
+                        <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">BASIC ENERGY</div>
+                        <div className="flex flex-col gap-2 mb-8">
+                          <div className="flex border border-[#8c7f73] bg-[#12161f] h-14">
+                            <div className="bg-[#e3d0b3] text-[#1c222e] w-14 flex items-center justify-center font-bold text-lg relative"><div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-6"></div> AE</div>
+                            <div className="flex-1 flex items-center px-6 text-[#e3d0b3] text-2xl font-bold">{arenaData.license.ae}</div>
+                          </div>
+                          <div className="flex border border-[#8c7f73] bg-[#12161f] h-14 justify-end">
+                            <div className="flex-1 flex items-center px-6 text-[#e3d0b3] text-2xl font-bold justify-end">{arenaData.license.vp}</div>
+                            <div className="bg-[#e3d0b3] text-[#1c222e] w-14 flex items-center justify-center font-bold text-lg relative"><div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-6"></div> VP</div>
+                          </div>
+                        </div>
 
-                  <div className="flex flex-col gap-1 relative border-l-2 border-[#8c7f73] pl-2">
-                     {(duelData[arenaData.myRole.toLowerCase()].deck || []).map((matName, i) => {
-                        const mat = materialsList.find(m => m.name === matName);
-                        if(!mat) return null;
-                        
-                        let tagClr = 'bg-[#85200c] text-[#e3d0b3]';
-                        if(mat.format.toLowerCase().includes('def')) tagClr = 'bg-[#e3d0b3] text-[#1c222e]';
-                        if(mat.format.toLowerCase().includes('regen')) tagClr = 'border border-[#8c7f73] text-[#e3d0b3] bg-transparent';
-
-                        return (
-                           <div key={i} className="flex justify-between items-center border border-[#8c7f73] bg-[#12161f] p-2">
-                              <span className="text-[#e3d0b3] text-xs font-bold flex-1">{mat.name}</span>
-                              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-sm mr-2 ${tagClr}`}>
-                                 {mat.format.substring(0,3).toUpperCase()}
-                              </span>
-                              <div className="w-5 h-5 bg-[#e3d0b3] flex items-center justify-center rounded-sm">
-                                 <svg className="w-3 h-3 text-[#1c222e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                        <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">COMBAT STYLE</div>
+                        <div className="grid grid-cols-2 gap-2 mb-8">
+                           {['spellcraft', 'armament', 'alchemia', 'relicium'].map(style => (
+                             <div key={style} className="flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
+                               <span className="text-[#e3d0b3] text-[10px] font-bold uppercase">{style}</span>
+                               <div className={`w-5 h-5 ${arenaData.license.combatStyle?.[style] === true ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[10px] font-bold rounded-sm`}>
+                                 {arenaData.license.combatStyle?.[style] === true ? '✓' : '✕'}
+                               </div>
+                             </div>
+                           ))}
+                           <div className="col-span-2 flex justify-between items-center border border-[#8c7f73] p-2 bg-[#1c222e]">
+                              <span className="text-[#e3d0b3] text-[10px] font-bold">COMBINATION</span>
+                              <div className={`w-5 h-5 ${arenaData.license.combatStyle?.combination === true ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[10px] font-bold rounded-sm`}>
+                                {arenaData.license.combatStyle?.combination === true ? '✓' : '🔒'}
                               </div>
                            </div>
-                        )
-                     })}
-                     {[...Array(Math.max(0, (TIER_DECK_LIMIT[arenaData.license.tier] || 5) - (duelData[arenaData.myRole.toLowerCase()].deck || []).length))].map((_, i) => (
-                        <div key={`empty-${i}`} className="flex justify-between items-center border border-[#5a5650] bg-[#12161f] p-2 opacity-50">
-                          <span className="text-[#5a5650] text-xs font-bold italic">Slot Terkunci</span>
-                          <span className="text-[#5a5650] text-[8px] font-bold px-1.5 py-0.5">🔒</span>
                         </div>
-                     ))}
-                  </div>
 
-                  <div className="text-center text-[9px] text-[#85200c] font-bold tracking-[0.3em] mt-6 flex items-center justify-center gap-2">
-                    <span>◆</span> SIAP BERTARUNG <span>◆</span>
+                        <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">COMBAT STATISTICS</div>
+                        <div className="space-y-4 mb-8">
+                          {['win', 'draw', 'lose'].map((label) => {
+                            const val = arenaData.license.stats?.[label] || 0;
+                            const color = label === 'win' ? '#e3d0b3' : label === 'lose' ? '#85200c' : '#8c7f73';
+                            return (
+                              <div key={label}>
+                                <div className="flex justify-between text-[10px] text-[#8c7f73] font-bold mb-1"><div className="flex items-center gap-2"><div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }}></div>{label.toUpperCase()}</div><span>{val}%</span></div>
+                                <div className="w-full h-2 bg-[#12161f] border border-[#8c7f73] border-dashed"><div className="h-full" style={{ width: `${val}%`, backgroundColor: color }}></div></div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        <div className="text-[#e3d0b3] font-bold text-xs mb-4 tracking-widest">TURN SECTION</div>
+                        <div className="border border-[#8c7f73] bg-[#12161f] p-4 relative mt-2">
+                          <div className="absolute top-[30px] left-[10%] right-[10%] h-[1px] bg-[#8c7f73] z-0"></div>
+                          <div className="flex justify-between items-start relative z-10">
+                            {[1,2,3].map((num) => {
+                              const isCurrent = duelData.duelNumber === num || num === 2;
+                              const isDone = num < 2;
+                              return (
+                                <div key={num} className="flex flex-col items-center w-1/3">
+                                  <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold mb-2 bg-[#12161f] ${isCurrent ? 'border-[#e3d0b3] text-[#e3d0b3]' : 'border-[#8c7f73] text-[#8c7f73]'}`}>{isDone ? '✓' : num}</div>
+                                  <div className="text-[10px] text-[#e3d0b3] font-bold mb-1">DUEL {num}</div>
+                                  <div className="text-[8px] text-[#8c7f73] text-center uppercase whitespace-nowrap">Lawan mulai duluan</div>
+                                  <div className={`text-[8px] mt-1 font-bold ${isCurrent ? 'text-[#e3d0b3]' : 'text-[#85200c]'}`}>{isDone ? 'SELESAI' : isCurrent ? 'BERJALAN' : 'BELUM MULAI'}</div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="lg:col-span-4 flex flex-col">
+                        <div className="w-full flex justify-end mb-4">
+                           <div className="bg-[#f4e8d3] text-[#1c222e] text-center font-bold py-2 px-8 relative" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 15px 100%, 0 calc(100% - 15px))' }}><span className="text-sm tracking-widest">{arenaData.duel[arenaData.myRole.toLowerCase()].style?.toUpperCase() || 'SPELLCRAFT'}</span></div>
+                        </div>
+                        <div className="text-[#8c7f73] text-[10px] font-bold text-right mb-3">{selectedMaterials.length || (duelData[arenaData.myRole.toLowerCase()].deck || []).length} / {TIER_DECK_LIMIT[arenaData.license.tier] || 5} MATERIAL (DECK TERKUNCI)</div>
+
+                        <div className="flex flex-col gap-1 relative border-l-2 border-[#8c7f73] pl-2">
+                           {(duelData[arenaData.myRole.toLowerCase()].deck || []).map((matName, i) => {
+                              const mat = materialsList.find(m => m.name === matName);
+                              if(!mat) return null;
+                              let tagClr = 'bg-[#85200c] text-[#e3d0b3]';
+                              if(mat.format.toLowerCase().includes('def')) tagClr = 'bg-[#e3d0b3] text-[#1c222e]';
+                              if(mat.format.toLowerCase().includes('regen')) tagClr = 'border border-[#8c7f73] text-[#e3d0b3] bg-transparent';
+                              return (
+                                 <div key={i} className="flex justify-between items-center border border-[#8c7f73] bg-[#12161f] p-2">
+                                    <span className="text-[#e3d0b3] text-xs font-bold flex-1">{mat.name}</span>
+                                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-sm mr-2 ${tagClr}`}>{mat.format.substring(0,3).toUpperCase()}</span>
+                                    <div className="w-5 h-5 bg-[#e3d0b3] flex items-center justify-center rounded-sm"><svg className="w-3 h-3 text-[#1c222e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg></div>
+                                 </div>
+                              )
+                           })}
+                           {[...Array(Math.max(0, (TIER_DECK_LIMIT[arenaData.license.tier] || 5) - (duelData[arenaData.myRole.toLowerCase()].deck || []).length))].map((_, i) => (
+                              <div key={`empty-${i}`} className="flex justify-between items-center border border-[#5a5650] bg-[#12161f] p-2 opacity-50">
+                                <span className="text-[#5a5650] text-xs font-bold italic">Slot Terkunci</span>
+                                <span className="text-[#5a5650] text-[8px] font-bold px-1.5 py-0.5">🔒</span>
+                              </div>
+                           ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-10 pt-4 border-t border-[#8c7f73] border-dashed flex justify-between text-[10px] text-[#8c7f73] tracking-widest relative z-10">
+                      <span>DIPERBARUI: {new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})} WIB (GMT+7)</span>
+                    </div>
                   </div>
                 </div>
               </div>
-
-              <div className="mt-10 pt-4 border-t border-[#8c7f73] border-dashed flex justify-between text-[10px] text-[#8c7f73] tracking-widest relative z-10">
-                <span>DIPERBARUI: {new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})} WIB (GMT+7)</span>
-              </div>
             </div>
-
           </div>
         </div>
       )}
 
       <Modal isOpen={modal.isOpen} onClose={() => setModal({ ...modal, isOpen: false })} message={modal.message} type={modal.type} />
-    
-          <style>{`
-        @keyframes winnerGlow {
-          0%, 100% { box-shadow: 0 0 15px 2px rgba(227, 208, 179, 0.4), inset 0 0 10px rgba(227, 208, 179, 0.2); border-color: #e3d0b3; }
-          50% { box-shadow: 0 0 30px 8px rgba(227, 208, 179, 0.8), inset 0 0 20px rgba(227, 208, 179, 0.5); border-color: #ffffff; }
-        }
-        @keyframes textShine {
-          0% { text-shadow: 0 0 5px rgba(227, 208, 179, 0.5); }
-          50% { text-shadow: 0 0 15px rgba(227, 208, 179, 1), 0 0 25px rgba(227, 208, 179, 0.8); }
-          100% { text-shadow: 0 0 5px rgba(227, 208, 179, 0.5); }
-        }
-        .winner-glow {
-          animation: winnerGlow 2s ease-in-out infinite;
-        }
-        .winner-text {
-          animation: textShine 2s ease-in-out infinite;
-          color: #ffffff !important;
-        }
-      `}</style>
     </div>
   )
 }

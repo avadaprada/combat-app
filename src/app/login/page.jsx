@@ -19,7 +19,6 @@ export default function LoginPage() {
     setErrorMsg('')
 
     try {
-      // 1. Panggil API backend kita (untuk cek password lama & migrasi)
       const res = await fetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -32,7 +31,6 @@ export default function LoginPage() {
         throw new Error(data.message || 'Login gagal')
       }
 
-      // 2. Set session login di browser
       const { error } = await supabase.auth.setSession({
         access_token: data.session.access_token,
         refresh_token: data.session.refresh_token
@@ -40,7 +38,6 @@ export default function LoginPage() {
 
       if (error) throw error
 
-      // 3. Pindah ke halaman dashboard
       router.push('/dashboard')
       router.refresh()
 
@@ -52,55 +49,62 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#1c222e] flex items-center justify-center p-4">
-      <div className="max-w-md w-full border-2 border-[#8c7f73] p-8 relative">
+    // Menggunakan min-h-dvh agar tidak terpotong address bar browser HP
+    <div className="min-h-dvh bg-[#1c222e] flex items-center justify-center p-4 py-8">
+      
+      {/* Padding dibuat lebih kecil di HP (p-6), dan normal di laptop (md:p-8) */}
+      <div className="max-w-md w-full border-2 border-[#8c7f73] p-6 md:p-8 relative">
         
         {/* Dekorasi sudut */}
         <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-[#e3d0b3]"></div>
         <div className="absolute bottom-0 right-0 w-4 h-4 border-b-2 border-r-2 border-[#e3d0b3]"></div>
 
-        <h1 className="text-3xl font-bold text-center text-[#e3d0b3] mb-2 tracking-widest">
+        {/* Ukuran teks responsif: text-2xl di HP, text-3xl di laptop */}
+        <h1 className="text-2xl md:text-3xl font-bold text-center text-[#e3d0b3] mb-2 tracking-widest break-words">
           COMBAT CONSOLE
         </h1>
-        <p className="text-center text-[#8c7f73] text-sm mb-8 uppercase tracking-widest">
+        
+        {/* Spasi huruf dikurangi sedikit di HP agar tidak melebar keluar layar */}
+        <p className="text-center text-[#8c7f73] text-xs md:text-sm mb-6 md:mb-8 uppercase tracking-wider md:tracking-widest">
           Practitioner Access Portal
         </p>
 
         {errorMsg && (
-          <div className="bg-red-900/50 border border-red-500 text-red-200 p-3 mb-6 text-sm">
+          <div className="bg-red-900/50 border border-red-500 text-red-200 p-3 mb-6 text-sm break-words">
             {errorMsg}
           </div>
         )}
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-[#8c7f73] text-sm mb-2">ID Praktisi</label>
+            <label className="block text-[#8c7f73] text-sm mb-1.5 md:mb-2">ID Praktisi</label>
             <input 
               type="text" 
               value={id}
               onChange={(e) => setId(e.target.value)}
               placeholder="cth: 2402JM001"
-              className="w-full bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] p-3 focus:outline-none focus:border-[#e3d0b3]"
+              // Tambahan text-base mencegah iOS auto-zoom saat input diklik
+              className="w-full bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] p-3 text-base focus:outline-none focus:border-[#e3d0b3]"
               required
             />
           </div>
 
-                    <div>
-            <label className="block text-[#8c7f73] text-sm mb-2">Password</label>
+          <div>
+            <label className="block text-[#8c7f73] text-sm mb-1.5 md:mb-2">Password</label>
             <div className="relative">
               <input 
                 type={showPassword ? "text" : "password"} 
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] p-3 pr-12 focus:outline-none focus:border-[#e3d0b3]"
+                // Tambahan text-base mencegah iOS auto-zoom
+                className="w-full bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] p-3 pr-12 text-base focus:outline-none focus:border-[#e3d0b3]"
                 required
               />
-              {/* Tombol Mata */}
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8c7f73] hover:text-[#e3d0b3] transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8c7f73] hover:text-[#e3d0b3] transition-colors p-1"
               >
                 {showPassword ? (
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>
@@ -114,7 +118,7 @@ export default function LoginPage() {
           <button 
             type="submit" 
             disabled={loading}
-            className="w-full bg-[#e3d0b3] text-[#1c222e] font-bold p-3 mt-4 hover:bg-white transition-colors disabled:opacity-50"
+            className="w-full bg-[#e3d0b3] text-[#1c222e] font-bold p-3 mt-4 text-base hover:bg-white transition-colors disabled:opacity-50"
           >
             {loading ? 'Memproses...' : 'Masuk'}
           </button>

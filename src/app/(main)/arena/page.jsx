@@ -436,11 +436,13 @@ export default function ArenaPage() {
     container.scrollTop = container.scrollHeight;
   }, [duelData?.log])
 
-  // Filter Material untuk Deck Builder
+  // Filter Material untuk Deck Builder (Diperbaiki agar huruf besar/kecil tidak jadi masalah)
   const filteredDeckMaterials = materialsList.filter(m => {
     const matchStyle = m.type.toLowerCase() === selectedStyle;
-    const userTierIndex = TIER_ORDER.indexOf(arenaData?.license?.tier);
-    const matTierIndex = TIER_ORDER.indexOf(m.tier);
+    const userTier = (arenaData?.license?.tier || '').toLowerCase();
+    const matTier = (m.tier || '').toLowerCase();
+    const userTierIndex = TIER_ORDER.findIndex(t => t.toLowerCase() === userTier);
+    const matTierIndex = TIER_ORDER.findIndex(t => t.toLowerCase() === matTier);
     const matchTier = matTierIndex !== -1 && matTierIndex <= userTierIndex;
     return matchStyle && matchTier;
   });
@@ -510,149 +512,156 @@ export default function ArenaPage() {
               </div>
 
               {/* Pemilihan Material (3D Carousel) */}
-              <div className="flex-1 border border-[#8c7f73] p-4 md:p-6 bg-[#1c222e] flex flex-col overflow-hidden">
-                <h3 className="text-[#e3d0b3] font-bold text-base md:text-lg mb-3 md:mb-4 border-b border-[#8c7f73] pb-2">Susun Deck Material</h3>
-                
-                <div className="mb-4">
-                  <div className="text-[#8c7f73] text-[10px] md:text-xs mb-2">1. Pilih Combat Style</div>
-                  <div className="flex flex-wrap gap-1.5 md:gap-2">
-                    {Object.entries(arenaData.license.combatStyle).map(([style, state]) => {
-                      if (style === 'combination') return null;
-                      const isUnlocked = state === true;
-                      return (
-                        <button 
-                          key={style} disabled={!isUnlocked} 
-                          onClick={() => { 
-                            setSelectedStyle(style); 
-                            setSelectedMaterials([]); 
-                            setActiveDeckCardIndex(0); 
-                          }}
-                          className={`px-3 py-1.5 md:px-4 md:py-2 text-[10px] md:text-xs font-bold uppercase tracking-wider border transition-colors ${selectedStyle === style ? 'bg-[#e3d0b3] text-[#1c222e] border-[#e3d0b3]' : isUnlocked ? 'bg-transparent text-[#e3d0b3] border-[#8c7f73] hover:border-[#e3d0b3]' : 'bg-transparent text-[#5a5650] border-[#5a5650] cursor-not-allowed'}`}
-                        >
-                          {style}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                <div className="flex-1 flex flex-col">
-                  <div className="text-[#8c7f73] text-[10px] md:text-xs mb-2 flex justify-between">
-                    <span>2. Pilih Material (Maks: {TIER_DECK_LIMIT[arenaData.license.tier] || 5})</span>
-                    <span className="text-[#e3d0b3] font-bold">{selectedMaterials.length} terpilih</span>
-                  </div>
+              <div className="flex-1 border border-[#8c7f73] p-4 md:p-6 bg-[#1c222e] flex flex-col justify-between">
+                <div>
+                  <h3 className="text-[#e3d0b3] font-bold text-base md:text-lg mb-3 md:mb-4 border-b border-[#8c7f73] pb-2">Susun Deck Material</h3>
                   
-                  {!selectedStyle ? (
-                    <div className="text-center text-[#8c7f73] py-8 border border-dashed border-[#8c7f73] text-xs md:text-sm flex-1 flex items-center justify-center rounded">Pilih style dulu.</div>
-                  ) : (
-                    // Area Carousel 3D
-                    <div className="relative w-full h-[320px] md:h-[400px] flex justify-center items-center perspective-[1200px] overflow-hidden mt-2">
-                      
-                      {/* Tombol Kiri */}
-                      <button 
-                        onClick={() => { if (activeDeckCardIndex > 0) setActiveDeckCardIndex(activeDeckCardIndex - 1); }}
-                        disabled={activeDeckCardIndex === 0}
-                        className="absolute left-1 md:left-4 z-50 bg-[#1C2330] border border-[#998776] md:border-2 text-[#e3d0b3] w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xl"
-                      >
-                        <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
-                      </button>
-
-                      {/* Kartu-kartu Material */}
-                      {filteredDeckMaterials.map((mat, index) => {
-                        const offset = index - activeDeckCardIndex;
-                        if (Math.abs(offset) > 2) return null;
-
-                        const isSelected = selectedMaterials.includes(mat.name);
-                        const isExclusive = mat.exclusive === true;
-                        const hasAccess = isExclusive ? (arenaData.license.materialBuffs && arenaData.license.materialBuffs[mat.name]) : true;
-
-                        let translateX = '0%';
-                        let rotateZ = '0deg';
-                        let scale = '1';
-                        let zIndex = '30';
-                        let brightness = 'brightness-100';
-
-                        if (offset === -1) { translateX = '-60%'; rotateZ = '-10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
-                        else if (offset === -2) { translateX = '-110%'; rotateZ = '-20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
-                        else if (offset === 1) { translateX = '60%'; rotateZ = '10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
-                        else if (offset === 2) { translateX = '110%'; rotateZ = '20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
-
+                  <div className="mb-4">
+                    <div className="text-[#8c7f73] text-[10px] md:text-xs mb-2">1. Pilih Combat Style</div>
+                    <div className="flex flex-wrap gap-1.5 md:gap-2">
+                      {Object.entries(arenaData.license.combatStyle).map(([style, state]) => {
+                        if (style === 'combination') return null;
+                        const isUnlocked = state === true;
                         return (
-                          <div 
-                            key={mat.name} 
-                            onClick={() => {
-                              if (offset !== 0) {
-                                setActiveDeckCardIndex(index);
-                              } else {
-                                if (!hasAccess) return setModal({ isOpen: true, message: 'Material ini terkunci.', type: 'error' });
-                                toggleMaterial(mat.name);
-                              }
+                          <button 
+                            key={style} disabled={!isUnlocked} 
+                            onClick={() => { 
+                              setSelectedStyle(style); 
+                              setSelectedMaterials([]); 
+                              setActiveDeckCardIndex(0); 
                             }}
-                            style={{ 
-                              transform: `translateX(${translateX}) rotateZ(${rotateZ}) scale(${scale})`,
-                              zIndex,
-                              transition: 'all 0.4s cubic-bezier(0.25, 1, 0.5, 1)'
-                            }}
-                            className={`absolute w-[200px] md:w-[240px] h-[280px] md:h-[340px] border-[2px] md:border-[3px] ${offset === 0 ? (isSelected ? 'border-[#4a7c59]' : 'border-[#EDE2CF]') : 'border-[#998776]'} bg-[#12161f] flex flex-col cursor-pointer shadow-2xl ${brightness} rounded-lg overflow-hidden`}
+                            className={`px-3 py-1.5 md:px-4 md:py-2 text-[10px] md:text-xs font-bold uppercase tracking-wider border transition-colors ${selectedStyle === style ? 'bg-[#e3d0b3] text-[#1c222e] border-[#e3d0b3]' : isUnlocked ? 'bg-transparent text-[#e3d0b3] border-[#8c7f73] hover:border-[#e3d0b3]' : 'bg-transparent text-[#5a5650] border-[#5a5650] cursor-not-allowed'}`}
                           >
-                            {/* Visual Kartu */}
-                            <div className="relative w-full h-[65%] border-b border-[#998776]/50 overflow-hidden bg-[#1C2330]">
-                              {mat.photoUrl ? (
-                                <img src={mat.photoUrl} alt={mat.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-[#998776] text-xs">No Image</div>
-                              )}
-                              
-                              <div className="absolute top-2 left-2 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider bg-black/70 border border-[#998776] text-[#e3d0b3]">
-                                {mat.format}
-                              </div>
-
-                              {isSelected && offset === 0 && (
-                                <div className="absolute inset-0 bg-[#4a7c59]/30 flex items-center justify-center">
-                                  <div className="bg-[#4a7c59] text-white rounded-full p-2 border-2 border-white shadow-lg">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Info Kartu */}
-                            <div className="p-3 flex-1 flex flex-col justify-between bg-[#12161f]">
-                              <div>
-                                <div className="flex justify-between items-start">
-                                  <h4 className="text-[#e3d0b3] font-bold text-sm md:text-base leading-tight">{mat.name}</h4>
-                                  <span className="text-[#8c7f73] text-[9px] border border-[#8c7f73] px-1 rounded">{mat.tier}</span>
-                                </div>
-                                <div className="text-[#8c7f73] text-[9px] uppercase tracking-wider mt-1">{mat.element || mat.type}</div>
-                              </div>
-                              
-                              <div className="flex gap-2 mt-2">
-                                <div className="flex-1 text-center bg-[#1C2330] border border-[#8c7f73] text-[#e3d0b3] text-xs font-bold py-1">
-                                  AE: {mat.aeCost}
-                                </div>
-                              </div>
-                              
-                              {offset === 0 && (
-                                <button className={`w-full mt-2 py-1.5 text-[10px] font-bold uppercase tracking-widest border transition-colors ${!hasAccess ? 'bg-[#85200c] border-[#85200c] text-white cursor-not-allowed' : isSelected ? 'bg-[#4a7c59] border-[#4a7c59] text-white' : 'bg-[#e3d0b3] border-[#e3d0b3] text-[#1c222e]'}`}>
-                                  {!hasAccess ? 'Terkunci' : isSelected ? 'Batal Pilih' : 'Pilih Material'}
-                                </button>
-                              )}
-                            </div>
-                          </div>
+                            {style}
+                          </button>
                         )
                       })}
-
-                      {/* Tombol Kanan */}
-                      <button 
-                        onClick={() => { if (activeDeckCardIndex < filteredDeckMaterials.length - 1) setActiveDeckCardIndex(activeDeckCardIndex + 1); }}
-                        disabled={activeDeckCardIndex === filteredDeckMaterials.length - 1 || filteredDeckMaterials.length === 0}
-                        className="absolute right-1 md:right-4 z-50 bg-[#1C2330] border border-[#998776] md:border-2 text-[#e3d0b3] w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xl"
-                      >
-                        <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
-                      </button>
-
                     </div>
-                  )}
+                  </div>
+
+                  <div className="flex flex-col">
+                    <div className="text-[#8c7f73] text-[10px] md:text-xs mb-2 flex justify-between">
+                      <span>2. Pilih Material (Maks: {TIER_DECK_LIMIT[arenaData.license.tier] || 5})</span>
+                      <span className="text-[#e3d0b3] font-bold">{selectedMaterials.length} terpilih</span>
+                    </div>
+                    
+                    {!selectedStyle ? (
+                      <div className="text-center text-[#8c7f73] py-8 border border-dashed border-[#8c7f73] text-xs md:text-sm flex-1 flex items-center justify-center rounded min-h-[320px]">Pilih style dulu.</div>
+                    ) : filteredDeckMaterials.length === 0 ? (
+                      <div className="text-center text-[#8c7f73] py-8 border border-dashed border-[#8c7f73] text-xs md:text-sm flex-1 flex items-center justify-center rounded min-h-[320px]">Belum ada material untuk style dan tier ini.</div>
+                    ) : (
+                      // Area Carousel 3D
+                      <div 
+                        className="relative w-full h-[320px] md:h-[400px] flex justify-center items-center mt-2"
+                        style={{ perspective: '1200px' }} // <-- Perbaikan Safari/HP
+                      >
+                        
+                        {/* Tombol Kiri */}
+                        <button 
+                          onClick={() => { if (activeDeckCardIndex > 0) setActiveDeckCardIndex(activeDeckCardIndex - 1); }}
+                          disabled={activeDeckCardIndex === 0}
+                          className="absolute left-1 md:left-4 z-50 bg-[#1C2330] border border-[#998776] md:border-2 text-[#e3d0b3] w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xl"
+                        >
+                          <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+                        </button>
+
+                        {/* Kartu-kartu Material */}
+                        {filteredDeckMaterials.map((mat, index) => {
+                          const offset = index - activeDeckCardIndex;
+                          if (Math.abs(offset) > 2) return null;
+
+                          const isSelected = selectedMaterials.includes(mat.name);
+                          const isExclusive = mat.exclusive === true;
+                          const hasAccess = isExclusive ? (arenaData.license.materialBuffs && arenaData.license.materialBuffs[mat.name]) : true;
+
+                          let translateX = '0%';
+                          let rotateZ = '0deg';
+                          let scale = '1';
+                          let zIndex = '30';
+                          let brightness = 'brightness-100';
+
+                          if (offset === -1) { translateX = '-60%'; rotateZ = '-10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
+                          else if (offset === -2) { translateX = '-110%'; rotateZ = '-20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
+                          else if (offset === 1) { translateX = '60%'; rotateZ = '10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
+                          else if (offset === 2) { translateX = '110%'; rotateZ = '20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
+
+                          return (
+                            <div 
+                              key={mat.name} 
+                              onClick={() => {
+                                if (offset !== 0) {
+                                  setActiveDeckCardIndex(index);
+                                } else {
+                                  if (!hasAccess) return setModal({ isOpen: true, message: 'Material ini terkunci.', type: 'error' });
+                                  toggleMaterial(mat.name);
+                                }
+                              }}
+                              style={{ 
+                                transform: `translateX(${translateX}) rotateZ(${rotateZ}) scale(${scale})`,
+                                zIndex,
+                                transition: 'all 0.4s cubic-bezier(0.25, 1, 0.5, 1)'
+                              }}
+                              className={`absolute w-[200px] md:w-[240px] h-[280px] md:h-[340px] border-[2px] md:border-[3px] ${offset === 0 ? (isSelected ? 'border-[#4a7c59]' : 'border-[#EDE2CF]') : 'border-[#998776]'} bg-[#12161f] flex flex-col cursor-pointer shadow-2xl ${brightness} rounded-lg overflow-hidden`}
+                            >
+                              {/* Visual Kartu */}
+                              <div className="relative w-full h-[65%] border-b border-[#998776]/50 overflow-hidden bg-[#1C2330]">
+                                {mat.photoUrl ? (
+                                  <img src={mat.photoUrl} alt={mat.name} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-[#998776] text-xs">No Image</div>
+                                )}
+                                
+                                <div className="absolute top-2 left-2 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider bg-black/70 border border-[#998776] text-[#e3d0b3]">
+                                  {mat.format}
+                                </div>
+
+                                {isSelected && offset === 0 && (
+                                  <div className="absolute inset-0 bg-[#4a7c59]/30 flex items-center justify-center">
+                                    <div className="bg-[#4a7c59] text-white rounded-full p-2 border-2 border-white shadow-lg">
+                                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path></svg>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Info Kartu */}
+                              <div className="p-3 flex-1 flex flex-col justify-between bg-[#12161f]">
+                                <div>
+                                  <div className="flex justify-between items-start">
+                                    <h4 className="text-[#e3d0b3] font-bold text-sm md:text-base leading-tight">{mat.name}</h4>
+                                    <span className="text-[#8c7f73] text-[9px] border border-[#8c7f73] px-1 rounded">{mat.tier}</span>
+                                  </div>
+                                  <div className="text-[#8c7f73] text-[9px] uppercase tracking-wider mt-1">{mat.element || mat.type}</div>
+                                </div>
+                                
+                                <div className="flex gap-2 mt-2">
+                                  <div className="flex-1 text-center bg-[#1C2330] border border-[#8c7f73] text-[#e3d0b3] text-xs font-bold py-1">
+                                    AE: {mat.aeCost}
+                                  </div>
+                                </div>
+                                
+                                {offset === 0 && (
+                                  <button className={`w-full mt-2 py-1.5 text-[10px] font-bold uppercase tracking-widest border transition-colors ${!hasAccess ? 'bg-[#85200c] border-[#85200c] text-white cursor-not-allowed' : isSelected ? 'bg-[#4a7c59] border-[#4a7c59] text-white' : 'bg-[#e3d0b3] border-[#e3d0b3] text-[#1c222e]'}`}>
+                                    {!hasAccess ? 'Terkunci' : isSelected ? 'Batal Pilih' : 'Pilih Material'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+
+                        {/* Tombol Kanan */}
+                        <button 
+                          onClick={() => { if (activeDeckCardIndex < filteredDeckMaterials.length - 1) setActiveDeckCardIndex(activeDeckCardIndex + 1); }}
+                          disabled={activeDeckCardIndex === filteredDeckMaterials.length - 1 || filteredDeckMaterials.length === 0}
+                          className="absolute right-1 md:right-4 z-50 bg-[#1C2330] border border-[#998776] md:border-2 text-[#e3d0b3] w-8 h-8 md:w-10 md:h-10 flex items-center justify-center rounded-full hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xl"
+                        >
+                          <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <div className="mt-4 pt-3 md:pt-4 border-t border-[#8c7f73]">
@@ -1040,7 +1049,6 @@ export default function ArenaPage() {
       {showMatchData && arenaData && duelData && (
         <div className="fixed inset-0 z-50 flex items-start justify-center p-2 md:p-4 bg-[#0a0d14] overflow-y-auto custom-scrollbar">
           
-          {/* Area Tombol Aksi (Diperbaiki: Di atas, flex, tidak menutupi kartu) */}
           <div className="w-full max-w-[1500px] flex justify-end gap-2 md:gap-3 mb-4 sticky top-2 z-[60]">
             <button onClick={downloadMatchData} disabled={isDownloading} className="bg-[#12161f] border border-[#e3d0b3] text-[#e3d0b3] px-4 py-2 text-xs font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1c222e] transition-colors shadow-lg">
               {isDownloading ? 'Menyimpan...' : 'Simpan Gambar'}

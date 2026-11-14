@@ -22,7 +22,10 @@ export default function ArenaPage() {
   const [selectedStyle, setSelectedStyle] = useState('')
   const [selectedMaterials, setSelectedMaterials] = useState([])
   
+  // State untuk Carousel Deck Builder (Persiapan)
   const [activeDeckCardIndex, setActiveDeckCardIndex] = useState(0)
+  // State untuk Carousel Live Duel (Dalam Pertarungan)
+  const [activeDuelCardIndex, setActiveDuelCardIndex] = useState(0)
 
   const [duelData, setDuelData] = useState(null)
   const pollTimerRef = useRef(null)
@@ -435,7 +438,7 @@ export default function ArenaPage() {
     container.scrollTop = container.scrollHeight;
   }, [duelData?.log])
 
-  // Filter Material untuk Deck Builder (Sangat aman terhadap spasi & huruf besar/kecil)
+  // Filter Material untuk Deck Builder
   const filteredDeckMaterials = materialsList.filter(m => {
     const typeKey = (m.type || '').trim().toLowerCase();
     const matchStyle = typeKey === (selectedStyle || '').trim().toLowerCase();
@@ -446,11 +449,12 @@ export default function ArenaPage() {
     const userTierIndex = TIER_ORDER.findIndex(t => t.toLowerCase() === userTier);
     const matTierIndex = TIER_ORDER.findIndex(t => t.toLowerCase() === matTier);
     
-    // Jika tier user tidak ditemukan, tampilkan material agar tidak kosong melompong
     const matchTier = (userTierIndex !== -1 && matTierIndex !== -1) ? (matTierIndex <= userTierIndex) : true;
     
     return matchStyle && matchTier;
   });
+
+  const myDeckNames = duelData && arenaData ? (duelData[arenaData.myRole === 'A' ? 'a' : 'b'].deck || []) : [];
 
   return (
     <div className="max-w-[1500px] mx-auto p-3 md:p-6">
@@ -555,7 +559,7 @@ export default function ArenaPage() {
                     ) : filteredDeckMaterials.length === 0 ? (
                       <div className="text-center text-[#8c7f73] py-8 border border-dashed border-[#8c7f73] text-xs md:text-sm flex-1 flex items-center justify-center rounded min-h-[320px]">Belum ada material untuk style dan tier ini.</div>
                     ) : (
-                      // Area Carousel 3D
+                      // Area Carousel 3D Deck Builder
                       <div 
                         className="relative w-full h-[320px] md:h-[400px] flex justify-center items-center mt-2"
                         style={{ perspective: '1200px' }}
@@ -569,7 +573,6 @@ export default function ArenaPage() {
                           <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
                         </button>
 
-                        {/* Kartu-kartu Material (Dengan inset-0 m-auto agar selalu di tengah) */}
                         {filteredDeckMaterials.map((mat, index) => {
                           const offset = index - activeDeckCardIndex;
                           if (Math.abs(offset) > 2) return null;
@@ -578,11 +581,7 @@ export default function ArenaPage() {
                           const isExclusive = mat.exclusive === true;
                           const hasAccess = isExclusive ? (arenaData.license.materialBuffs && arenaData.license.materialBuffs[mat.name]) : true;
 
-                          let translateX = '0%';
-                          let rotateZ = '0deg';
-                          let scale = '1';
-                          let zIndex = '30';
-                          let brightness = 'brightness-100';
+                          let translateX = '0%'; let rotateZ = '0deg'; let scale = '1'; let zIndex = '30'; let brightness = 'brightness-100';
 
                           if (offset === -1) { translateX = '-60%'; rotateZ = '-10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
                           else if (offset === -2) { translateX = '-110%'; rotateZ = '-20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
@@ -593,9 +592,8 @@ export default function ArenaPage() {
                             <div 
                               key={mat.name} 
                               onClick={() => {
-                                if (offset !== 0) {
-                                  setActiveDeckCardIndex(index);
-                                } else {
+                                if (offset !== 0) { setActiveDeckCardIndex(index); }
+                                else {
                                   if (!hasAccess) return setModal({ isOpen: true, message: 'Material ini terkunci.', type: 'error' });
                                   toggleMaterial(mat.name);
                                 }
@@ -614,9 +612,7 @@ export default function ArenaPage() {
                                   <div className="w-full h-full flex items-center justify-center text-[#998776] text-xs">No Image</div>
                                 )}
                                 
-                                <div className="absolute top-2 left-2 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider bg-black/70 border border-[#998776] text-[#e3d0b3]">
-                                  {mat.format}
-                                </div>
+                                <div className="absolute top-2 left-2 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider bg-black/70 border border-[#998776] text-[#e3d0b3]">{mat.format}</div>
 
                                 {isSelected && offset === 0 && (
                                   <div className="absolute inset-0 bg-[#4a7c59]/30 flex items-center justify-center">
@@ -637,9 +633,7 @@ export default function ArenaPage() {
                                 </div>
                                 
                                 <div className="flex gap-2 mt-2">
-                                  <div className="flex-1 text-center bg-[#1C2330] border border-[#8c7f73] text-[#e3d0b3] text-xs font-bold py-1">
-                                    AE: {mat.aeCost}
-                                  </div>
+                                  <div className="flex-1 text-center bg-[#1C2330] border border-[#8c7f73] text-[#e3d0b3] text-xs font-bold py-1">AE: {mat.aeCost}</div>
                                 </div>
                                 
                                 {offset === 0 && (
@@ -831,11 +825,34 @@ export default function ArenaPage() {
                </div>
             </div>
 
-            <div className="flex-1 flex flex-col relative h-full z-10 bg-[#1c222e]">
-               <div className="flex-1 overflow-x-auto p-2 md:p-4 pt-6 md:pt-8 flex items-end gap-1.5 md:gap-2 custom-scrollbar">
-                 {(duelData[arenaData.myRole === 'A' ? 'a' : 'b'].deck || []).map((matName, i) => {
+            {/* KARTU DECK DUEL (3D CAROUSEL) */}
+            <div className="flex-1 flex flex-col relative h-full z-10 bg-[#1c222e] overflow-hidden">
+               
+               {/* Indikator posisi carousel (opsional) */}
+               <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[8px] text-[#8c7f73] uppercase tracking-widest z-20 pointer-events-none">
+                 Deck ({myDeckNames.length > 0 ? activeDuelCardIndex + 1 : 0}/{myDeckNames.length})
+               </div>
+
+               <div 
+                 className="flex-1 relative flex justify-center items-center mt-2"
+                 style={{ perspective: '1000px' }}
+               >
+                 {/* Tombol Kiri */}
+                 <button 
+                   onClick={() => { if (activeDuelCardIndex > 0) setActiveDuelCardIndex(activeDuelCardIndex - 1); }}
+                   disabled={activeDuelCardIndex === 0}
+                   className="absolute left-1 md:left-2 z-50 bg-[#1C2330] border border-[#998776] text-[#e3d0b3] w-6 h-6 md:w-8 md:h-8 flex items-center justify-center rounded-full hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xl"
+                 >
+                   <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+                 </button>
+
+                 {/* Looping Kartu */}
+                 {myDeckNames.map((matName, index) => {
                    const mat = materialsList.find(m => m.name === matName);
                    if (!mat) return null;
+
+                   const offset = index - activeDuelCardIndex;
+                   if (Math.abs(offset) > 2) return null;
                    
                    const isMyTurn = duelData.currentTurn === arenaData.myRole;
                    const myStats = duelData[arenaData.myRole === 'A' ? 'a' : 'b'];
@@ -851,33 +868,64 @@ export default function ArenaPage() {
                    if (mat.format.toLowerCase().includes('off')) borderClr = 'border-[#85200c]';
                    if (mat.format.toLowerCase().includes('def')) borderClr = 'border-[#e3d0b3]';
                    if (isRegen) borderClr = 'border-[#4a7c59]';
-                   
+
+                   // Transformasi 3D
+                   let translateX = '0%'; let rotateZ = '0deg'; let scale = '1'; let zIndex = '30'; let brightness = 'brightness-100';
+                   if (offset === -1) { translateX = '-70%'; rotateZ = '-10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
+                   else if (offset === -2) { translateX = '-120%'; rotateZ = '-20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
+                   else if (offset === 1) { translateX = '70%'; rotateZ = '10deg'; scale = '0.85'; zIndex = '20'; brightness = 'brightness-50'; }
+                   else if (offset === 2) { translateX = '120%'; rotateZ = '20deg'; scale = '0.7'; zIndex = '10'; brightness = 'brightness-[0.3]'; }
+
                    return (
-                     <div key={i} onClick={() => !isDisabled && handleUseMaterial(mat.name)} className={`group relative w-[70px] md:w-[90px] h-[100px] md:h-[130px] shrink-0 flex flex-col rounded border md:border-2 overflow-hidden transition-all duration-300 ${borderClr} bg-[#12161f] ${isDisabled ? 'opacity-40 grayscale cursor-not-allowed translate-y-1 md:translate-y-2' : 'hover:-translate-y-1 md:hover:-translate-y-2 hover:shadow-[0_10px_20px_rgba(0,0,0,0.6)] cursor-pointer shadow-md'}`}>
-                       
-                       {isProcessingMove && !isDisabled && (
+                     <div 
+                       key={index} 
+                       onClick={() => {
+                         if (offset !== 0) {
+                           setActiveDuelCardIndex(index);
+                         } else if (!isDisabled) {
+                           handleUseMaterial(mat.name);
+                         }
+                       }} 
+                       style={{ 
+                         transform: `translateX(${translateX}) rotateZ(${rotateZ}) scale(${scale})`,
+                         zIndex,
+                         transition: 'all 0.4s cubic-bezier(0.25, 1, 0.5, 1)'
+                       }}
+                       className={`absolute inset-0 m-auto w-[90px] md:w-[110px] h-[130px] md:h-[150px] flex flex-col rounded-md border-2 overflow-hidden ${borderClr} bg-[#12161f] ${isDisabled ? 'opacity-50 grayscale cursor-not-allowed' : 'hover:shadow-[0_10px_20px_rgba(0,0,0,0.6)] cursor-pointer shadow-xl'} ${brightness}`}
+                     >
+                       {isProcessingMove && !isDisabled && offset === 0 && (
                          <div className="absolute inset-0 bg-black/60 z-30 flex items-center justify-center">
                            <div className="w-4 h-4 md:w-6 md:h-6 border-2 border-[#e3d0b3] border-t-transparent rounded-full animate-spin"></div>
                          </div>
                        )}
 
-                       <div className="absolute top-0.5 left-0.5 w-4 h-4 md:w-5 md:h-5 rounded-full bg-[#1c222e] border border-[#8c7f73] flex items-center justify-center text-white font-bold text-[8px] md:text-[10px] z-20">{mat.aeCost}</div>
+                       <div className="absolute top-1 left-1 w-5 h-5 md:w-6 md:h-6 rounded-full bg-[#1c222e] border border-[#8c7f73] flex items-center justify-center text-white font-bold text-[9px] md:text-[11px] z-20">{mat.aeCost}</div>
+                       
                        <div className="relative z-10 p-1 flex flex-col h-full text-center justify-between">
-                         <div className="text-[6px] md:text-[7px] font-bold uppercase tracking-widest text-[#8c7f73] mt-0.5 md:mt-1">{mat.format}</div>
-                         <div className="text-[#e3d0b3] font-bold text-[9px] md:text-[11px] leading-tight flex-1 flex items-center justify-center">{mat.name}</div>
+                         <div className="text-[7px] md:text-[8px] font-bold uppercase tracking-widest text-[#8c7f73] mt-1">{mat.format}</div>
+                         <div className="text-[#e3d0b3] font-bold text-[10px] md:text-[12px] leading-tight flex-1 flex items-center justify-center">{mat.name}</div>
                          
                          {isRegen && (
-                           <div className={`text-[6px] md:text-[8px] font-bold border-t border-white/5 pt-0.5 ${isRegenLimitReached ? 'text-[#85200c]' : 'text-[#4a7c59]'}`}>
+                           <div className={`text-[7px] md:text-[9px] font-bold border-t border-white/5 pt-1 ${isRegenLimitReached ? 'text-[#85200c]' : 'text-[#4a7c59]'}`}>
                              REG: {regenTotalUsed}/2
                            </div>
                          )}
                          {!isRegen && (
-                           <div className="text-[6px] md:text-[8px] text-white/30 border-t border-white/5 pt-0.5">{mat.tier}</div>
+                           <div className="text-[7px] md:text-[9px] text-white/30 border-t border-white/5 pt-1">{mat.tier}</div>
                          )}
                        </div>
                      </div>
                    )
                  })}
+
+                 {/* Tombol Kanan */}
+                 <button 
+                   onClick={() => { if (activeDuelCardIndex < myDeckNames.length - 1) setActiveDuelCardIndex(activeDuelCardIndex + 1); }}
+                   disabled={activeDuelCardIndex === myDeckNames.length - 1 || myDeckNames.length === 0}
+                   className="absolute right-1 md:right-2 z-50 bg-[#1C2330] border border-[#998776] text-[#e3d0b3] w-6 h-6 md:w-8 md:h-8 flex items-center justify-center rounded-full hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-xl"
+                 >
+                   <svg className="w-3 h-3 md:w-4 md:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                 </button>
                </div>
             </div>
           </div>

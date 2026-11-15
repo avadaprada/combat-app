@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/utils/supabase/client'
 import Modal from '@/components/Modal'
 import html2canvas from 'html2canvas-pro'
+import { createPortal } from 'react-dom'
 
 const TIER_DECK_LIMIT = { Shodan: 5, Nidan: 6, Sandan: 8, Yondan: 10, Godan: 12 }
 const TIER_ORDER = ["Shodan", "Nidan", "Sandan", "Yondan", "Godan"]
@@ -11,6 +12,64 @@ const TIER_ORDER = ["Shodan", "Nidan", "Sandan", "Yondan", "Godan"]
 const LOGO_MAHOUTOKORO = "https://i.imgur.com/e2FcAoM.png"
 const LOGO_MINISTRY = "https://raw.githubusercontent.com/avadaprada/combat-console-repository/refs/heads/main/Teks%20paragraf%20Anda%20(2).png"
 const BAKEMONO_IMG = "https://raw.githubusercontent.com/avadaprada/combat-console-repository/refs/heads/main/BAKEMONO%20PNG-BROWN.png"
+
+const CARD_W = 1920
+const STAT_COLOR = { win: '#e3d0b3', draw: '#8c7f73', lose: '#85200c' }
+
+const BARCODE = (() => {
+  const bars = []
+  let x = 0, seed = 7
+  while (x < 331) {
+    seed = (seed * 9301 + 49297) % 233280
+    const w = 2 + (seed % 4)
+    const gap = 2 + ((seed >> 3) % 4)
+    if (x + w > 331) break
+    bars.push([x, w])
+    x += w + gap
+  }
+  return bars
+})()
+
+const SectionTitle = ({ children }) => (
+  <div className="text-[17px] leading-[20px] font-bold tracking-[2px] uppercase text-[#e3d0b3]">{children}</div>
+)
+
+const DashCorners = ({ size = 14, offset = 9, round = false }) => (
+  <>
+    <span className={`absolute pointer-events-none border-t border-l border-dashed border-[#8c7f73] ${round ? 'rounded-tl-[10px]' : ''}`} style={{ top: -offset, left: -offset, width: size, height: size }} />
+    <span className={`absolute pointer-events-none border-b border-r border-dashed border-[#8c7f73] ${round ? 'rounded-br-[10px]' : ''}`} style={{ bottom: -offset, right: -offset, width: size, height: size }} />
+  </>
+)
+
+const CheckIcon = ({ className = 'w-[18px] h-[18px]' }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className={className}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+  </svg>
+)
+
+const CrossIcon = ({ className = 'w-[16px] h-[16px]' }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className={className}>
+    <path strokeLinecap="round" d="M6 6l12 12M18 6L6 18" />
+  </svg>
+)
+
+const LockIcon = ({ className = 'w-[18px] h-[18px]' }) => (
+  <svg viewBox="0 0 24 24" className={className}>
+    <path d="M8 11V8a4 4 0 018 0v3" fill="none" stroke="#1c222e" strokeWidth="2.4" strokeLinecap="round" />
+    <rect x="5" y="10.5" width="14" height="10.5" rx="1.8" fill="#f5c542" stroke="#1c222e" strokeWidth="1" />
+  </svg>
+)
+
+const MeanderRing = ({ src, size }) => (
+  <div className="relative shrink-0" style={{ width: size, height: size }}>
+    <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#e3d0b3]">
+      <circle cx="50" cy="50" r="48" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="2.4 1.6" />
+      <circle cx="50" cy="50" r="44.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+    <img src={src} alt="" crossOrigin="anonymous" className="absolute rounded-full object-cover bg-[#12161f]"
+      style={{ top: '8%', left: '8%', width: '84%', height: '84%' }} />
+  </div>
+)
 
 export default function ArenaPage() {
   const [view, setView] = useState('select') 
@@ -46,23 +105,45 @@ export default function ArenaPage() {
   const supabase = createClient()
   const [isProcessingMove, setIsProcessingMove] = useState(false)
   const isProcessingRef = useRef(false)
+  const modalBodyRef = useRef(null)
+  const cardInnerRef = useRef(null)
+  const [cardHeight, setCardHeight] = useState(0)
+  const [isDesktop, setIsDesktop] = useState(true)
+  const [zoom, setZoom] = useState(1)
 
   // ================= HITUNG SKALA KARTU PRE-COMBAT =================
+  // Deteksi desktop / mobile (agar hanya SATU modal yang dirender)
   useEffect(() => {
-    const handleResize = () => {
-      if (typeof window !== 'undefined') {
-        // Lebar maksimal modal dikurangi padding (sekitar 48px)
-        const maxModalWidth = Math.min(window.innerWidth - 48, 1400); 
-        // Hitung skala. Kartu aslinya 1500px.
-        const scale = maxModalWidth / 1500; 
-        // Batasi agar tidak terlalu kecil (minimal 0.25) atau terlalu besar (maksimal 1)
-        setPreviewScale(Math.max(0.25, Math.min(scale, 1)));
-      }
-    };
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [showMatchData]);
+    const mq = window.matchMedia('(min-width: 768px)')
+    const update = () => setIsDesktop(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
+ // Skala "pas lebar" diukur dari container modal (desktop & mobile)
+  useEffect(() => {
+    if (!showMatchData) return
+    setZoom(1) // reset zoom setiap modal dibuka
+
+    const update = () => {
+      const body = modalBodyRef.current
+      const card = cardInnerRef.current
+      if (!body || !card) return
+      const cs = getComputedStyle(body)
+      const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight)
+      const available = body.clientWidth - padX
+      setPreviewScale(Math.min(available / 1500, 1))
+      setCardHeight(card.offsetHeight) // tinggi asli sebelum scale
+    }
+
+    update()
+    const ro = new ResizeObserver(update)
+    if (modalBodyRef.current) ro.observe(modalBodyRef.current)
+    if (cardInnerRef.current) ro.observe(cardInnerRef.current)
+    return () => ro.disconnect()
+  }, [showMatchData, isDesktop])
+
   // =================================================================
 
   // ================== FITUR AUTO-RESUME ==================
@@ -330,7 +411,7 @@ export default function ArenaPage() {
       clone.style.position = 'fixed';
       clone.style.top = '-99999px';
       clone.style.left = '0';
-      clone.style.width = '1500px';
+      clone.style.width = `${CARD_W}px`;
       clone.style.transform = 'none';
       clone.style.zIndex = '-1';
       document.body.appendChild(clone);
@@ -343,8 +424,8 @@ export default function ArenaPage() {
         backgroundColor: '#0f141c',
         useCORS: true,
         logging: false,
-        width: 1500,
-        windowWidth: 1500,
+        width: CARD_W,
+        windowWidth: CARD_W,
       });
 
       document.body.removeChild(clone);
@@ -439,6 +520,375 @@ export default function ArenaPage() {
     const finalCp = Math.round(finalExp * 0.5);
     return { exp: finalExp, cp: finalCp };
   };
+
+  const renderCardContent = () => {
+  const lic = arenaData.license
+  const opp = arenaData.opponent
+  const myKey = arenaData.myRole.toLowerCase()
+  const deck = duelData[myKey].deck || []
+  const deckLimit = TIER_DECK_LIMIT[lic.tier] || 5
+  const SLOTS = 12
+  const pct = lic.tierProgress?.pct ?? 100
+  const expToNext = Number(lic.tierProgress?.expToNext ?? 0).toLocaleString('id-ID')
+  const nextTier = (lic.tierProgress?.nextTier || 'MAX').toUpperCase()
+  const styleName = (duelData[myKey]?.style || arenaData.duel[myKey]?.style || 'spellcraft').toUpperCase()
+  const curDuel = duelData.duelNumber || 2
+  const STYLE_KEYS = ['spellcraft', 'armament', 'alchemia', 'relicium', 'combination']
+
+  // true -> centang | false -> silang | selain itu (null/'locked'/combination) -> gembok
+  const stateOf = (src, key) => {
+    const v = src?.[key]
+    if (v === true) return 'on'
+    if (key === 'combination') return 'locked'
+    return v === false ? 'off' : 'locked'
+  }
+
+  const now = new Date()
+  const dateStr = now.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' })
+  const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
+
+  const oppChip = (key) => {
+    const s = stateOf(opp.combatStyle, key)
+    const cls = s === 'on'
+      ? 'border-[#e3d0b3] text-[#e3d0b3] bg-[#12161f]'
+      : s === 'off'
+        ? 'border-[#85200c] text-[#e9a592] bg-[#1d1517]'
+        : 'border-[#3d4350] text-[#6a6f7a] bg-[#161b25]'
+    return (
+      <div key={key} className={`h-[28px] px-[11px] border flex items-center gap-[5px] font-bold text-[12px] tracking-[1px] uppercase ${cls}`}>
+        {key}
+        {s === 'on' ? <span>✓</span> : s === 'off' ? <span>✕</span> : <LockIcon className="w-[11px] h-[11px] opacity-60" />}
+      </div>
+    )
+  }
+
+  return (
+    <div
+      ref={matchDataRef}
+      className="relative shrink-0 bg-[#1c222e] text-[#e3d0b3] font-sans"
+      style={{ width: CARD_W, padding: '118px 92px 79px 118px' }}
+    >
+      {/* Belah ketupat kiri */}
+      {Array.from({ length: 16 }).map((_, i) => (
+        <div key={i} className="absolute w-[34px] h-[34px] bg-[#e3d0b3] rotate-45 z-20"
+          style={{ left: i % 2 === 0 ? 46 : 90, top: 203 + i * 89.5 }} />
+      ))}
+
+      {/* ===== KARTU ===== */}
+      <div className="relative border-[7px] border-[#e3d0b3] bg-[#1c222e]" style={{ padding: '57px 65px 52px' }}>
+
+        {/* Ornamen sudut */}
+        <span className="absolute -top-[7px] -left-[7px] w-[120px] h-[13px] bg-[#e3d0b3]" />
+        <span className="absolute -top-[7px] -left-[7px] w-[13px] h-[69px] bg-[#e3d0b3]" />
+        <span className="absolute -top-[7px] right-[3px] w-[52px] h-[89px] bg-[#e3d0b3]" />
+        <span className="absolute right-[3px] bottom-[58px] w-[78px] h-[28px] bg-[#e3d0b3]" />
+        <span className="absolute -right-[7px] -bottom-[7px] w-[13px] h-[65px] bg-[#e3d0b3]" />
+        <span className="absolute left-[34px] bottom-[3px] w-[28px] h-[4px] bg-[#e3d0b3]" />
+
+        {/* Strip miring kanan atas */}
+        <div className="absolute top-[33px] right-[180px] flex gap-[7px]">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="w-[14px] h-[36px] bg-[#8c7f73] -skew-x-[30deg]" />
+          ))}
+        </div>
+
+        {/* Logo + judul */}
+        <div className="flex items-center gap-[24px] h-[64px]">
+          <img src={LOGO_MAHOUTOKORO} alt="Mahoutokoro" className="h-[64px] w-[64px] object-contain" crossOrigin="anonymous" />
+          <div className="flex flex-col">
+            <span className="font-mono font-bold text-[15px] leading-[15px] tracking-[4px] text-[#e3d0b3]">MAHOUTOKORO</span>
+            <span className="font-serif font-bold text-[40px] leading-[40px] tracking-[2px] text-[#e3d0b3]">COMBAT</span>
+          </div>
+        </div>
+
+        {/* Personal Data + EXP + Tier */}
+        <div className="flex items-center mt-[32px]">
+          <div className="h-[47px] w-[315px] bg-[#e3d0b3] text-[#1c222e] font-bold uppercase text-[18px] tracking-[1.5px] flex items-center justify-center">
+            Personal Data Section
+          </div>
+          <div className="flex-1 h-px bg-[#e3d0b3] mx-[19px]" />
+          <div className="text-right text-[#e3d0b3] font-bold text-[17px] leading-[22px] tracking-[3px] mr-[21px]">
+            POINT<br />SECTION
+          </div>
+          <div className="h-[47px] w-[134px] border border-[#8c7f73] bg-[#12161f] text-[#e3d0b3] font-bold text-[19px] flex items-center justify-center">
+            {lic.exp} EXP
+          </div>
+          <div className="ml-[20px] h-[80px] w-[228px] border-2 border-[#b07f4f] text-[#1c222e] font-extrabold uppercase text-[30px] tracking-[4px] flex items-center justify-center"
+            style={{ backgroundColor: '#c59968' }}>
+            {lic.tier}
+          </div>
+        </div>
+
+        {/* Progress EXP */}
+        <div className="relative mt-[27px]">
+          <div className="flex justify-between font-mono text-[16px] leading-[18px] tracking-[2px] text-[#E3D0B3] mb-[7px]">
+            <span>{expToNext} EXP LAGI KE {nextTier}</span>
+            <span>{pct}%</span>
+          </div>
+          <div className="h-[14px] border border-[#a79b86] bg-[#12161f]">
+            <div className="h-full bg-[#e3d0b3]" style={{ width: `${pct}%` }} />
+          </div>
+          <DashCorners size={16} offset={12} />
+        </div>
+
+        {/* ===== GRID 3 KOLOM ===== */}
+        <div className="grid mt-[60px]" style={{ gridTemplateColumns: '450px 620px 392px', columnGap: 52 }}>
+
+          {/* ---------- KOLOM 1 ---------- */}
+          <div className="flex flex-col">
+            <SectionTitle>Summon Section</SectionTitle>
+
+            <div className="relative h-[302px] mt-[17px]">
+              <img src={BAKEMONO_IMG} alt="" crossOrigin="anonymous"
+                className="absolute left-[10px] top-1/2 w-[80px] h-[80px] object-contain opacity-80" />
+              <div className="absolute left-[104px] top-0">
+                <MeanderRing src={lic.photoUrl} size={302} uid="me" />
+              </div>
+            </div>
+
+            {/* Name plate */}
+            <div className="relative mt-[23px] h-[110px] w-[444px]">
+              <div className="absolute inset-0 flex flex-col justify-center pl-[27px]"
+                style={{
+                  background: 'linear-gradient(100deg,#e6d8bc 0%,#f6efe0 100%)',
+                  clipPath: 'polygon(16px 0,100% 0,100% 100%,0 100%,0 16px)',
+                }}>
+                <div className="text-[#1c222e] font-extrabold text-[27px] leading-[32px]">{lic.name}</div>
+                <div className="font-mono text-[#7a6d60] text-[20px] leading-[24px] tracking-[4px] mt-[6px]">{lic.id}</div>
+              </div>
+              <span className="absolute left-0 top-0 w-0 h-0"
+                style={{ borderTop: '16px solid #8c7f73', borderRight: '16px solid transparent' }} />
+              <DashCorners size={28} offset={10} round />
+            </div>
+
+            {/* Enemy */}
+            <div className="mt-[33px]"><SectionTitle>Enemy Section</SectionTitle></div>
+            <div className="relative mt-[18px] h-[160px] border border-dashed border-[#8c7f73] flex items-center px-[22px]">
+              <MeanderRing src={opp.photoUrl} size={74} uid="opp" />
+              <div className="ml-[18px]">
+                <div className="text-[#e3d0b3] font-bold text-[20px] leading-[24px]">{opp.name}</div>
+                <div className="font-mono text-[15px] leading-[18px] text-[#cfc1a6] mt-[4px]">ID: {opp.id}</div>
+                <div className="font-mono text-[15px] leading-[18px] text-[#8c7f73] uppercase mt-[2px]">TIER: {opp.tier}</div>
+                <div className="flex gap-[12px] mt-[10px]">
+                  <div className="w-[84px] h-[34px] border border-[#e3d0b3] bg-[#12161f] text-[#e3d0b3] font-bold text-[15px] flex items-center justify-center">AE {opp.ae}</div>
+                  <div className="w-[84px] h-[34px] border border-[#85200c] bg-[#2a1411] text-[#f0b9a8] font-bold text-[15px] flex items-center justify-center">VP {opp.vp}</div>
+                </div>
+              </div>
+              <DashCorners size={22} offset={9} round />
+            </div>
+
+            {/* Combat style lawan */}
+            <div className="mt-[35px] font-mono text-[16px] leading-[18px] tracking-[2px] text-[#E3D0B3] uppercase">Combat Style Lawan</div>
+            <div className="mt-[5px] flex gap-[9px]">{['spellcraft', 'armament', 'alchemia'].map(oppChip)}</div>
+            <div className="mt-[9px] flex gap-[9px]">{['relicium', 'combination'].map(oppChip)}</div>
+
+            {/* Statistik lawan */}
+            <div className="mt-[40px] font-mono text-[16px] leading-[18px] tracking-[2px] text-[#E3D0B3] uppercase">
+              Statistik Lawan · Total {opp.totalDuel || 0} Duel
+            </div>
+            <div className="mt-[7px] flex flex-col gap-[7px]">
+              {['win', 'draw', 'lose'].map((label) => {
+                const val = opp.stats?.[label] || 0
+                return (
+                  <div key={label} className="flex items-center h-[18px]">
+                    <span className="w-[56px] font-mono text-[16px] tracking-[1px] text-[#8c7f73] uppercase">{label}</span>
+                    <div className="flex-1 h-[8px] border border-[#8c7f73] bg-[#12161f]">
+                      <div className="h-full" style={{ width: `${val}%`, backgroundColor: STAT_COLOR[label] }} />
+                    </div>
+                    <span className="w-[56px] text-right text-[16px] font-bold text-[#e3d0b3]">{val}%</span>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Barcode + seal */}
+            <svg className="mt-[32px] ml-[32px] w-[331px] h-[40px]" viewBox="0 0 331 40" preserveAspectRatio="none">
+              {BARCODE.map(([x, w], i) => <rect key={i} x={x} y="0" width={w} height="40" fill="#e3d0b3" />)}
+            </svg>
+            <div className="mt-[30px] ml-[78px] flex items-center gap-[21px]">
+              <img src={LOGO_MINISTRY} alt="Seal" crossOrigin="anonymous" className="w-[24px] h-[24px] object-contain" />
+              <div className="text-[15px] leading-[20px] font-bold tracking-[1.5px] text-[#e3d0b3]">
+                <div>JAPANESE MINISTRY OF MAGIC</div>
+                <div>COMBAT OFFICE ©2026</div>
+              </div>
+            </div>
+          </div>
+
+          {/* ---------- KOLOM 2 ---------- */}
+          <div className="flex flex-col">
+            <div className="flex" style={{ columnGap: 43 }}>
+              {/* Basic Energy */}
+              <div className="w-[202px]">
+                <SectionTitle>Basic Energy</SectionTitle>
+
+                <div className="relative mt-[18px] flex h-[82px]">
+                  <div className="w-[71px] bg-[#e3d0b3] text-[#1c222e] flex flex-col items-center justify-center">
+                    <span className="w-[7px] h-[7px] bg-[#85200c] rotate-45 mb-[8px]" />
+                    <span className="text-[14px] leading-[17px] font-bold tracking-[2px]">AE</span>
+                  </div>
+                  <div className="flex-1 border border-l-0 border-[#8c7f73] bg-[#12161f] flex items-center pl-[30px] text-[38px] font-extrabold text-[#e3d0b3]">
+                    {lic.ae}
+                  </div>
+                  <DashCorners />
+                </div>
+
+                <div className="relative mt-[26px] flex h-[82px]">
+                  <div className="flex-1 border border-r-0 border-[#8c7f73] bg-[#12161f] flex items-center pl-[36px] text-[38px] font-extrabold text-[#e3d0b3]">
+                    {lic.vp}
+                  </div>
+                  <div className="w-[70px] bg-[#e3d0b3] text-[#1c222e] flex flex-col items-center justify-center">
+                    <span className="w-[7px] h-[7px] bg-[#85200c] rotate-45 mb-[8px]" />
+                    <span className="text-[14px] leading-[17px] font-bold tracking-[2px]">VP</span>
+                  </div>
+                  <DashCorners />
+                </div>
+              </div>
+
+              {/* Combat Style */}
+              <div className="w-[375px]">
+                <SectionTitle>Combat Style</SectionTitle>
+                <div className="mt-[17px] grid grid-cols-2 gap-x-[16px] gap-y-[14px]">
+                  {STYLE_KEYS.map((key) => {
+                    const s = stateOf(lic.combatStyle, key)
+                    return (
+                      <div key={key}
+                        className={`relative h-[60px] border border-[#8c7f73] bg-[#1c222e] flex items-center justify-between px-[14px] ${key === 'combination' ? 'col-span-2' : ''}`}>
+                        <span className="text-[15px] font-bold tracking-[2px] uppercase text-[#e3d0b3]">{key}</span>
+                        <div className={`w-[36px] h-[36px] rounded-[4px] flex items-center justify-center ${s === 'on' ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'}`}>
+                          {s === 'on' ? <CheckIcon /> : s === 'off' ? <CrossIcon /> : <LockIcon />}
+                        </div>
+                        <DashCorners size={22} offset={-7} />
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Combat Statistics */}
+            <div className="mt-[70px]"><SectionTitle>Combat Statistics</SectionTitle></div>
+            <div className="mt-[20px] flex flex-col gap-[34px]">
+              {['win', 'draw', 'lose'].map((label) => {
+                const val = lic.stats?.[label] || 0
+                return (
+                  <div key={label}>
+                    <div className="flex items-center justify-between h-[20px]">
+                      <div className="flex items-center gap-[8px]">
+                        <span className="w-[7px] h-[7px] rounded-full" style={{ backgroundColor: STAT_COLOR[label] }} />
+                        <span className="font-mono text-[20px] tracking-[1px] text-[#cfc1a6] uppercase">{label}</span>
+                      </div>
+                      <span className="text-[20px] font-bold text-[#e3d0b3]">{val}%</span>
+                    </div>
+                    <div className="mt-[9px] h-[17px] border-[1.5px] border-[#8c7f73] bg-[#12161f]">
+                      <div className="h-full" style={{ width: `${val}%`, backgroundColor: STAT_COLOR[label] }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div className="mt-[32px] pt-[14px] border-t border-dashed border-[#8c7f73]/70 text-center font-mono-bold text-[18px] leading-[16px] tracking-[3px] text-[#E3D0B3]">
+              TOTAL: {lic.totalDuel} DUEL
+            </div>
+
+            {/* Turn Section */}
+            <div className="mt-[50px]"><SectionTitle>Turn Section</SectionTitle></div>
+            <div className="relative mt-[18px] h-[173px] border-[1.5px] border-[#8c7f73] bg-[#10151d] px-[25px] pt-[30px]">
+              <div className="absolute left-[120px] right-[120px] top-[50px] h-[1.5px] bg-[#8c7f73]" />
+              <div className="relative flex">
+                {[1, 2, 3].map((num) => {
+                  const isDone = num < curDuel
+                  const isCurrent = num === curDuel
+                  const circle = isDone
+                    ? 'bg-[#8c7f73] border-[#8c7f73] text-[#1c222e]'
+                    : isCurrent
+                      ? 'bg-[#e3d0b3] border-[#e3d0b3] text-[#1c222e]'
+                      : 'bg-[#10151d] border-dashed border-[#8c7f73] text-[#8c7f73]'
+                  return (
+                    <div key={num} className="flex-1 flex flex-col items-center">
+                      <div className={`w-[40px] h-[40px] rounded-full border-2 flex items-center justify-center font-bold text-[15px] ${circle}`}>{num}</div>
+                      <div className="mt-[12px] text-[20px] leading-[18px] font-bold tracking-[1px] text-[#e3d0b3]">DUEL {num}</div>
+                      <div className="mt-[12px] text-[16px] leading-[18px] text-[#cfc1a6]"><b className="text-[#e3d0b3]">LAWAN</b> mulai duluan</div>
+                      <div className={`mt-[10px] font-mono text-[16px] leading-[16px] tracking-[2px] ${isDone ? 'text-[#8c7f73]' : isCurrent ? 'text-[#e3d0b3]' : 'text-[#4f5560]'}`}>
+                        {isDone ? 'SELESAI' : isCurrent ? 'BERJALAN' : 'BELUM MULAI'}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <DashCorners />
+            </div>
+            <div className="relative mt-[22px] h-[10px] flex items-center justify-center">
+              <div className="absolute inset-x-[10%] h-px bg-gradient-to-r from-transparent via-[#8c7f73]/40 to-transparent" />
+              <span className="relative w-[6px] h-[6px] bg-[#85200c] rotate-45" />
+            </div>
+          </div>
+
+          {/* ---------- KOLOM 3 ---------- */}
+          <div className="relative ml-[6px] -mt-[3px] border-l-[4px] border-[#e3d0b3] pl-[36px] pt-[21px]">
+            <span className="absolute -left-[4px] bottom-0 w-[84px] h-[5px] bg-[#e3d0b3]" />
+
+            <div className="relative h-[70px] flex items-center justify-center text-[22px] font-bold tracking-[4px] text-[#1c222e]"
+              style={{ background: 'linear-gradient(90deg,#e6d8bc,#f2e8d4)' }}>
+              {styleName}
+              <span className="absolute top-[10px] left-[10px] w-[12px] h-[12px] border-t border-l border-[#8c7f73]" />
+              <span className="absolute bottom-[10px] right-[10px] w-[12px] h-[12px] border-b border-r border-[#8c7f73]" />
+            </div>
+
+            <div className="mt-[21px] font-mono text-[15px] leading-[18px] tracking-[2px] text-[#E3D0B3]">
+              {deck.length} / {deckLimit} MATERIAL (DECK TERKUNCI)
+            </div>
+
+            <div className="mt-[14px] flex flex-col gap-[13px]">
+              {Array.from({ length: SLOTS }).map((_, i) => {
+                const mat = materialsList.find(m => m.name === deck[i])
+
+                if (mat) {
+                  const f = (mat.format || '').toLowerCase()
+                  let tag = 'bg-[#85200c] text-[#f5e9d6]'
+                  if (f.includes('def')) tag = 'bg-[#f0e6d2] text-[#1c222e]'
+                  if (f.includes('regen')) tag = 'border border-[#e3d0b3] text-[#e3d0b3]'
+                  return (
+                    <div key={i} className="flex items-center gap-[14px] pr-[6px]">
+                      <div className="flex-1 min-w-0 h-[58px] border border-[#8c7f73] bg-[#141a24] flex items-center justify-between px-[16px]">
+                        <span className="text-[20px] font-bold text-[#e3d0b3] truncate">{mat.name}</span>
+                        <span className={`h-[29px] px-[12px] flex items-center text-[15px] font-bold tracking-[1px] ${tag}`}>
+                          {mat.format.substring(0, 3).toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="w-[36px] h-[38px] rounded-[4px] bg-[#d9c8ab] text-[#1c222e] flex items-center justify-center shrink-0">
+                        <CheckIcon />
+                      </div>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div key={`empty-${i}`} className="flex items-center gap-[14px] pr-[6px]">
+                    <div className="flex-1 h-[58px] border border-[#3d4350] bg-[#161b25] flex items-center pl-[16px] text-[20px] font-bold text-[#6f6a64]">
+                      Slot Terkunci
+                    </div>
+                    <div className="w-[36px] h-[38px] rounded-[4px] bg-[#85200c] flex items-center justify-center shrink-0">
+                      <LockIcon />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="mt-[33px] pb-[130px] flex items-center justify-center gap-[10px] font-mono text-[18px] font-bold tracking-[5px] text-[#E63946]">
+              <span className="text-[15px]">◆</span> SIAP BERTARUNG <span className="text-[15px]">◆</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="mt-[38px] pt-[28px] border-t border-dashed border-[#8c7f73]/70 font-mono text-[20px] leading-[18px] tracking-[2px] text-[#8c7f73] uppercase">
+          DIPERBARUI: {dateStr} {timeStr} WIB (GMT+7)
+        </div>
+      </div>
+    </div>
+  )
+};
 
   const { exp: estExp, cp: estCp } = calculateExpCp();
 
@@ -1155,375 +1605,147 @@ export default function ArenaPage() {
         </div>
       )}
 
-            {/* ================= MODAL PRE-COMBAT (DATA MATCH) ================= */}
+      {/* ================= MODAL PRE-COMBAT (DATA MATCH) ================= */}
       {showMatchData && arenaData && duelData && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm overflow-hidden">
-          
-          {/* Modal Container */}
-          <div className="bg-[#1c222e] border-2 border-[#8c7f73] w-full max-w-[1400px] h-auto max-h-[90vh] rounded-lg shadow-2xl flex flex-col overflow-hidden relative">
-            
-            {/* Header Modal */}
-            <div className="flex justify-between items-center p-3 md:p-4 border-b border-[#8c7f73] shrink-0 bg-[#12161f]">
-              <h3 className="text-[#e3d0b3] font-bold tracking-widest uppercase text-xs md:text-sm">
-                Pre-Combat Preview
-              </h3>
-              <button 
-                onClick={() => setShowMatchData(false)} 
-                className="bg-[#85200c] border border-[#e3d0b3] text-white px-3 py-1.5 md:px-4 md:py-2 rounded text-[10px] md:text-xs font-bold tracking-widest uppercase hover:bg-red-800 transition-colors shadow-lg flex items-center gap-1"
-              >
-                ✕ TUTUP
-              </button>
-            </div>
+        isDesktop ? (
+          /* ---------- DESKTOP ---------- */
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-10 bg-black/80 backdrop-blur-sm overflow-hidden">
+            <div className="bg-[#1c222e] border-2 border-[#8c7f73] w-full max-w-[1100px] max-h-[90vh] rounded-lg shadow-xl flex flex-col overflow-hidden relative">
 
-            {/* Body Modal (Scrollable) */}
-            <div className="flex-1 overflow-auto p-2 md:p-4 custom-scrollbar bg-[#0f141c] flex justify-center items-start">
-              
-              {/* 
-                WRAPPER SKALA DINAMIS
-                - width & height dihitung berdasarkan skala agar tidak menyisakan ruang kosong
-                - transform: scale() mengecilkan kartu 1500px agar pas di layar
-              */}
-              <div 
-                className="relative flex justify-center shrink-0"
-                style={{ 
-                  width: `${1500 * previewScale}px`, 
-                  height: `${1030 * previewScale}px`, // Perkiraan tinggi kartu
-                  transition: 'width 0.2s, height 0.2s'
-                }}
-              >
-                
-                {/* ===== AREA KARTU ASLI (1500PX) ===== */}
-                <div 
-                  ref={matchDataRef} 
-                  style={{ 
-                    transform: `scale(${previewScale})`, 
-                    transformOrigin: 'top left',
-                    width: '1500px',
-                    position: 'absolute',
-                    top: 0,
-                    left: 0
-                  }}
-                  className="relative bg-[#0f141c] py-10 pl-20 pr-10 flex justify-center overflow-hidden"
+              <div className="flex justify-between items-center p-3 border-b border-[#8c7f73] shrink-0 bg-[#12161f]">
+                <h3 className="text-[#e3d0b3] font-bold tracking-widest uppercase text-sm">Pre-Combat Preview</h3>
+                <button
+                  onClick={() => setShowMatchData(false)}
+                  className="bg-[#85200c] border border-[#e3d0b3] text-white px-2 py-1 rounded text-[8px] font-bold tracking-widest uppercase hover:bg-red-800 transition-colors shadow-lg"
                 >
-                  
-                  {/* Ornamen Batang Diagonal Kiri */}
-                  <div className="absolute top-0 bottom-0 left-6 flex flex-col justify-around py-10 z-0">
-                    {[1,2,3,4,5,6,7,8,9].map(i => (
-                      <div key={i} className="w-8 h-8 bg-[#e3d0b3] rotate-45 shadow-sm" />
-                    ))}
-                  </div>
+                  ✕ TUTUP
+                </button>
+              </div>
 
-                  {/* ===== KARTU UTAMA ===== */}
-                  <div className="relative w-full bg-[#1c222e] border-[6px] border-[#e3d0b3] p-10 z-10 shadow-2xl flex flex-col">
-                    
-                    {/* Ornamen Sudut */}
-                    <div className="absolute top-0 left-0 w-24 h-12 border-r-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-                    <div className="absolute top-0 right-0 w-16 h-24 border-l-[6px] border-b-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-                    <div className="absolute bottom-0 left-0 w-16 h-24 border-r-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-                    <div className="absolute bottom-0 right-0 w-24 h-12 border-l-[6px] border-t-[6px] border-[#1c222e] z-0 bg-[#e3d0b3]"></div>
-
-                    {/* Ornamen Kanan Atas */}
-                    <div className="absolute top-6 right-24 flex gap-1 z-20">
-                      {[1,2,3,4,5,6,7].map(i => (
-                        <div key={i} className="w-3 h-8 bg-[#8c7f73] transform -skew-x-[30deg]"></div>
-                      ))}
-                    </div>
-
-                    {/* Logo & Title */}
-                    <div className="flex items-center gap-4 mb-6 relative z-10">
-                      <img src={LOGO_MAHOUTOKORO} alt="Mahoutokoro" className="h-16 object-contain" crossOrigin="anonymous" />
-                      <div className="flex flex-col">
-                        <span className="text-[#8c7f73] font-bold text-[10px] tracking-[3px]">MAHOUTOKORO</span>
-                        <span className="text-[#e3d0b3] font-bold text-3xl tracking-widest leading-none">COMBAT</span>
-                      </div>
-                    </div>
-
-                    {/* Header bar: Personal Data + Tier */}
-                    <div className="flex flex-wrap items-center gap-4 mb-2 relative z-10">
-                      <div className="bg-[#e3d0b3] text-[#1c222e] font-bold text-sm px-4 py-2 uppercase tracking-wide">
-                        Personal Data Section
-                      </div>
-                      <div className="flex-1 border-b border-[#e3d0b3] h-0"></div>
-                      <div className="text-right">
-                        <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">POINT</div>
-                        <div className="text-[#e3d0b3] text-[10px] font-bold tracking-widest">SECTION</div>
-                      </div>
-                      <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] font-bold px-4 py-2 text-sm">
-                        {arenaData.license.exp} EXP
-                      </div>
-                      <div className="font-bold text-xl px-8 py-2 uppercase tracking-widest text-[#1c222e]" style={{ backgroundColor: '#c59968' }}>
-                        {arenaData.license.tier}
-                      </div>
-                    </div>
-
-                    {/* Progress bar EXP */}
-                    <div className="mb-8 w-full relative z-10">
-                      <div className="flex justify-between text-[10px] text-[#8c7f73] mb-1 px-1">
-                        <span>{arenaData.license.tierProgress?.expToNext || 0} EXP LAGI KE {arenaData.license.tierProgress?.nextTier?.toUpperCase() || 'MAX'}</span>
-                        <span>{arenaData.license.tierProgress?.pct || 100}%</span>
-                      </div>
-                      <div className="w-full h-2.5 border border-[#8c7f73] border-dashed bg-[#12161f] relative">
-                        <div className="h-full bg-[#e3d0b3]" style={{ width: `${arenaData.license.tierProgress?.pct || 100}%` }}></div>
-                        <div className="absolute inset-0 flex justify-between px-1">
-                          {[...Array(40)].map((_, i) => <div key={i} className="w-px h-full bg-[#1c222e] opacity-20"></div>)}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ===== GRID UTAMA (3 KOLOM) ===== */}
-                    <div className="grid grid-cols-12 gap-6 relative z-10">
-                      
-                      {/* KOLOM 1 (KIRI) - col-span-3 */}
-                      <div className="col-span-3 flex flex-col">
-                        <div className="text-[#e3d0b3] font-bold text-[11px] mb-4 tracking-widest uppercase">Summon Section</div>
-                        
-                        <div className="relative w-full flex justify-center items-center mb-6 py-2">
-                          <img src={BAKEMONO_IMG} alt="Bakemono" className="absolute left-0 top-1/2 -translate-y-1/2 w-14 h-14 object-contain z-20 opacity-90" crossOrigin="anonymous"/>
-                          <div className="relative w-44 h-44 flex items-center justify-center">
-                            <svg viewBox="0 0 100 100" className="absolute inset-0 w-full h-full text-[#e3d0b3]">
-                              <defs>
-                                <pattern id="meander" x="0" y="0" width="10" height="10" patternUnits="userSpaceOnUse">
-                                  <path d="M0 5 h5 v-5 h5 v10 h-5 v-5 h-5 z" fill="none" stroke="currentColor" strokeWidth="1" />
-                                </pattern>
-                              </defs>
-                              <circle cx="50" cy="50" r="48" fill="none" stroke="currentColor" strokeWidth="4" strokeDasharray="4 2" />
-                              <circle cx="50" cy="50" r="43" fill="none" stroke="currentColor" strokeWidth="3" />
-                              <circle cx="50" cy="50" r="40" fill="url(#meander)" stroke="currentColor" strokeWidth="2" />
-                            </svg>
-                            <img src={arenaData.license.photoUrl} alt="Foto" className="relative z-10 w-[72%] h-[72%] rounded-full object-cover bg-[#12161f]" crossOrigin="anonymous" />
-                          </div>
-                        </div>
-
-                        <div className="w-full bg-[#e3d0b3] text-[#1c222e] p-4 relative mb-6" style={{ clipPath: 'polygon(20px 0, 100% 0, 100% 100%, 0 100%, 0 20px)' }}>
-                          <div className="font-bold text-xl mb-1">{arenaData.license.name}</div>
-                          <div className="font-bold text-sm opacity-70">{arenaData.license.id}</div>
-                        </div>
-
-                        <div className="text-[10px] text-[#e3d0b3] font-bold tracking-widest mb-2 uppercase">Enemy Section</div>
-                        <div className="w-full border border-[#8c7f73] border-dashed p-3 relative mb-6">
-                          <div className="flex items-center gap-3 mb-3">
-                            <img src={arenaData.opponent.photoUrl} alt="Opponent" className="w-12 h-12 rounded-full border border-[#8c7f73] object-cover bg-[#12161f]" crossOrigin="anonymous" />
-                            <div>
-                              <div className="text-[#e3d0b3] font-bold text-sm">{arenaData.opponent.name}</div>
-                              <div className="text-[#8c7f73] text-[10px]">ID: {arenaData.opponent.id}</div>
-                              <div className="text-[#8c7f73] text-[10px] uppercase">TIER: {arenaData.opponent.tier}</div>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">AE {arenaData.opponent.ae}</div>
-                            <div className="bg-[#12161f] border border-[#8c7f73] text-[#e3d0b3] text-[10px] font-bold px-2 py-1 flex-1 text-center">VP {arenaData.opponent.vp}</div>
-                          </div>
-                        </div>
-
-                        <div className="text-[10px] text-[#8c7f73] font-bold mb-2 uppercase tracking-wider">Combat Style Lawan</div>
-                        <div className="flex flex-wrap gap-1 mb-6">
-                          {['SPELLCRAFT', 'ARMAMENT', 'ALCHEMIA', 'RELICIUM', 'COMBINATION'].map((style) => {
-                            const isActive = arenaData.opponent.combatStyle?.[style.toLowerCase()];
-                            return (
-                              <div key={style} className="border border-[#8c7f73] px-2 py-1 text-[8px] font-bold text-[#e3d0b3] flex items-center gap-1 rounded-sm">
-                                {style} {isActive ? <span className="text-[#e3d0b3]">✓</span> : <span className="text-[#85200c]">✕</span>}
-                              </div>
-                            )
-                          })}
-                        </div>
-
-                        <div className="text-[10px] text-[#8c7f73] font-bold mb-2">STATISTIK LAWAN - TOTAL {arenaData.opponent.totalDuel || 0} DUEL</div>
-                        <div className="space-y-1.5 mb-8">
-                          {['win', 'draw', 'lose'].map((label) => {
-                            const val = arenaData.opponent.stats?.[label] || 0;
-                            const color = label === 'win' ? '#e3d0b3' : label === 'lose' ? '#85200c' : '#8c7f73';
-                            return (
-                              <div key={label} className="flex items-center gap-2">
-                                <span className="text-[9px] text-[#8c7f73] w-8 uppercase">{label}</span>
-                                <div className="flex-1 h-1.5 bg-[#12161f] border border-[#8c7f73]">
-                                  <div className="h-full" style={{ width: `${val}%`, backgroundColor: color }}></div>
-                                </div>
-                                <span className="text-[9px] text-[#e3d0b3] w-8 text-right">{val}%</span>
-                              </div>
-                            )
-                          })}
-                        </div>
-
-                        <div className="mt-auto flex flex-col items-center w-full pt-6">
-                          <svg className="w-[60%] h-6 mb-3 opacity-80" preserveAspectRatio="none" viewBox="0 0 100 20">
-                            {[...Array(40)].map((_, i) => (
-                              <rect key={i} x={i * 2.5} y="0" width={i % 3 === 0 ? "1.5" : "0.8"} height="20" fill="#e3d0b3" />
-                            ))}
-                          </svg>
-                          <div className="flex items-center gap-2">
-                            <img src={LOGO_MINISTRY} className="w-5 h-5 object-contain" alt="Seal" crossOrigin="anonymous" />
-                            <div className="text-[7px] font-bold tracking-widest text-[#8c7f73] text-center leading-tight">
-                              <div>JAPANESE MINISTRY OF MAGIC</div>
-                              <div>COMBAT OFFICE ©2026</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* KOLOM 2 (TENGAH) - col-span-3 */}
-                      <div className="col-span-3 flex flex-col pl-2">
-                        <div className="flex gap-4 mb-8">
-                          <div className="flex-1">
-                            <div className="text-[#e3d0b3] font-bold text-[11px] mb-3 tracking-widest uppercase">Basic Energy</div>
-                            <div className="flex flex-col gap-2">
-                              <div className="flex border border-[#8c7f73] bg-[#12161f] h-12">
-                                <div className="bg-[#e3d0b3] text-[#1c222e] w-10 flex items-center justify-center font-bold text-xs relative">
-                                  <div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-4"></div> AE
-                                </div>
-                                <div className="flex-1 flex items-center px-3 text-[#e3d0b3] text-lg font-bold">{arenaData.license.ae}</div>
-                              </div>
-                              <div className="flex border border-[#8c7f73] bg-[#12161f] h-12 justify-end">
-                                <div className="flex-1 flex items-center px-3 text-[#e3d0b3] text-lg font-bold justify-end">{arenaData.license.vp}</div>
-                                <div className="bg-[#e3d0b3] text-[#1c222e] w-10 flex items-center justify-center font-bold text-xs relative">
-                                  <div className="absolute w-1.5 h-1.5 bg-[#85200c] rotate-45 mb-4"></div> VP
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-[#e3d0b3] font-bold text-[11px] mb-3 tracking-widest uppercase">Combat Style</div>
-                            <div className="grid grid-cols-1 gap-1.5">
-                              {['SPELLCRAFT', 'ARMAMENT', 'ALCHEMIA', 'RELICIUM', 'COMBINATION'].map((style) => {
-                                const isActive = arenaData.license.combatStyle?.[style.toLowerCase()];
-                                return (
-                                  <div key={style} className="flex justify-between items-center border border-[#8c7f73] p-1.5 bg-[#1c222e]">
-                                    <span className="text-[#e3d0b3] text-[9px] font-bold">{style}</span>
-                                    <div className={`w-4 h-4 ${isActive ? 'bg-[#e3d0b3] text-[#1c222e]' : 'bg-[#85200c] text-[#e3d0b3]'} flex items-center justify-center text-[8px] font-bold rounded-sm`}>
-                                      {isActive ? '✓' : (style === 'COMBINATION' ? '🔒' : '✕')}
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="text-[#e3d0b3] font-bold text-[11px] mb-3 tracking-widest uppercase">Combat Statistics</div>
-                        <div className="space-y-3 mb-6">
-                          {['win', 'draw', 'lose'].map((label) => {
-                            const val = arenaData.license.stats?.[label] || 0;
-                            const color = label === 'win' ? '#e3d0b3' : label === 'lose' ? '#85200c' : '#8c7f73';
-                            return (
-                              <div key={label}>
-                                <div className="flex justify-between text-[10px] text-[#8c7f73] font-bold mb-1">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }}></div>
-                                    {label.toUpperCase()}
-                                  </div>
-                                  <span>{val}%</span>
-                                </div>
-                                <div className="w-full h-2 bg-[#12161f] border border-[#8c7f73] border-dashed">
-                                  <div className="h-full" style={{ width: `${val}%`, backgroundColor: color }}></div>
-                                </div>
-                              </div>
-                            )
-                          })}
-                        </div>
-                        <div className="text-center text-[9px] text-[#8c7f73] border-t border-[#8c7f73] border-dashed pt-2 mb-6">TOTAL: {arenaData.license.totalDuel} DUEL</div>
-
-                        <div className="text-[#e3d0b3] font-bold text-[11px] mb-3 tracking-widest uppercase">Turn Section</div>
-                        <div className="border border-[#8c7f73] bg-[#12161f] p-3 relative mt-auto">
-                          <div className="absolute top-[24px] left-[15%] right-[15%] h-[1px] bg-[#8c7f73] z-0"></div>
-                          <div className="flex justify-between items-start relative z-10">
-                            {[1,2,3].map((num) => {
-                              const isCurrent = duelData.duelNumber === num || num === 2;
-                              const isDone = num < 2;
-                              return (
-                                <div key={num} className="flex flex-col items-center w-1/3">
-                                  <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center text-[10px] font-bold mb-1 bg-[#12161f] ${isCurrent ? 'border-[#e3d0b3] text-[#e3d0b3]' : 'border-[#8c7f73] text-[#8c7f73]'}`}>
-                                    {isDone ? '✓' : num}
-                                  </div>
-                                  <div className="text-[9px] text-[#e3d0b3] font-bold mb-0.5">DUEL {num}</div>
-                                  <div className="text-[7px] text-[#8c7f73] text-center uppercase whitespace-nowrap">Lawan mulai</div>
-                                  <div className={`text-[7px] mt-1 font-bold ${isCurrent ? 'text-[#e3d0b3]' : 'text-[#85200c]'}`}>
-                                    {isDone ? 'SELESAI' : isCurrent ? 'BERJALAN' : 'BELUM MULAI'}
-                                  </div>
-                                </div>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* KOLOM 3 (KANAN) - col-span-4 (Slot Deck) */}
-                      <div className="col-span-4 flex flex-col pl-4 border-l border-[#8c7f73]/30">
-                        <div className="w-full flex justify-center mb-5">
-                          <div className="bg-[#f4e8d3] text-[#1c222e] text-center font-bold py-2 px-8 relative w-[90%]" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 15px 100%, 0 calc(100% - 15px))' }}>
-                            <span className="text-sm tracking-widest">
-                              {arenaData.duel[arenaData.myRole.toLowerCase()].style?.toUpperCase() || 'SPELLCRAFT'}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="text-[#8c7f73] text-[10px] font-bold text-center mb-3 tracking-widest">
-                          {(duelData[arenaData.myRole.toLowerCase()].deck || []).length} / {TIER_DECK_LIMIT[arenaData.license.tier] || 5} MATERIAL (DECK TERKUNCI)
-                        </div>
-
-                        <div className="flex flex-col gap-1.5 w-full max-w-[320px] mx-auto">
-                          {Array.from({ length: TIER_DECK_LIMIT[arenaData.license.tier] || 5 }).map((_, i) => {
-                            const matName = (duelData[arenaData.myRole.toLowerCase()].deck || [])[i];
-                            const mat = materialsList.find(m => m.name === matName);
-
-                            if (mat) {
-                              let tagClr = 'bg-[#85200c] text-[#e3d0b3]';
-                              if (mat.format.toLowerCase().includes('def')) tagClr = 'bg-[#e3d0b3] text-[#1c222e]';
-                              if (mat.format.toLowerCase().includes('regen')) tagClr = 'border border-[#8c7f73] text-[#e3d0b3] bg-transparent';
-
-                              return (
-                                <div key={i} className="flex justify-between items-center border border-[#8c7f73] bg-[#12161f] p-2 h-10">
-                                  <span className="text-[#e3d0b3] text-[11px] font-bold flex-1 truncate">{mat.name}</span>
-                                  <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-sm mr-2 ${tagClr}`}>
-                                    {mat.format.substring(0,3).toUpperCase()}
-                                  </span>
-                                  <div className="w-5 h-5 bg-[#e3d0b3] flex items-center justify-center rounded-sm shrink-0">
-                                    <svg className="w-3 h-3 text-[#1c222e]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
-                                    </svg>
-                                  </div>
-                                </div>
-                              )
-                            } else {
-                              return (
-                                <div key={`empty-${i}`} className="flex justify-between items-center border border-[#5a5650] bg-[#12161f] p-2 h-10 opacity-50">
-                                  <span className="text-[#5a5650] text-[10px] font-bold italic">Slot Terkunci</span>
-                                  <span className="text-[#5a5650] text-[10px] font-bold">🔒</span>
-                                </div>
-                              )
-                            }
-                          })}
-                        </div>
-
-                        <div className="text-center text-[9px] text-[#85200c] font-bold tracking-[0.3em] mt-6 flex items-center justify-center gap-2">
-                          <span>◆</span> SIAP BERTARUNG <span>◆</span>
-                        </div>
-                      </div>
-
-                    </div>
-
-                    {/* Footer tanggal digenerate */}
-                    <div className="mt-12 pt-4 border-t border-[#8c7f73] border-dashed flex justify-between text-[10px] text-[#8c7f73] tracking-widest relative z-10">
-                      <span>DIPERBARUI: {new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })} {new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})} WIB (GMT+7)</span>
-                    </div>
-
+              {/* Body: diukur oleh ResizeObserver */}
+              <div
+                ref={modalBodyRef}
+                className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-4 bg-[#0f141c] custom-scrollbar"
+              >
+                {/* Wrapper: ukuran = ukuran kartu SETELAH di-scale */}
+                <div
+                  className="relative mx-auto"
+                  style={{
+                    width: `${CARD_W * previewScale}px`,
+                    height: `${cardHeight * previewScale}px`,
+                  }}
+                >
+                  <div
+                    ref={cardInnerRef}
+                    style={{
+                      width: `${CARD_W}px`,
+                      transform: `scale(${previewScale})`,
+                      transformOrigin: 'top left',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                    }}
+                  >
+                    {renderCardContent()}
                   </div>
                 </div>
               </div>
 
-              {/* Tombol Download (Di luar area scroll agar selalu terlihat) */}
-              <div className="mt-4 md:mt-6 mb-2 shrink-0">
-                <button 
-                  onClick={downloadMatchData} 
-                  disabled={isDownloading} 
-                  className="bg-[#1C2330] border-2 border-[#e3d0b3] text-[#e3d0b3] px-20 py-3 text-sm font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2"
+              <div className="p-4 border-t border-[#8c7f73] bg-[#12161f] flex justify-center shrink-0">
+                <button
+                  onClick={downloadMatchData}
+                  disabled={isDownloading}
+                  className="bg-[#1C2330] border border-[#e3d0b3] text-[#e3d0b3] px-4 py-2 text-[10px] font-bold tracking-widest uppercase hover:bg-[#e3d0b3] hover:text-[#1C2330] transition-all shadow-lg flex items-center gap-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                   {isDownloading ? 'MENYIMPAN...' : 'SIMPAN PRE-COMBAT'}
                 </button>
               </div>
-              
             </div>
           </div>
+        ) : (
+  /* ---------- MOBILE (via portal) ---------- */
+  createPortal(
+    <div className="fixed left-0 top-0 w-full h-[100dvh] z-[9999] flex flex-col bg-[#0f141c] overflow-hidden">
+
+      {/* Header: selalu terlihat */}
+      <div className="flex items-center gap-2 p-3 border-b border-[#8c7f73] shrink-0 bg-[#12161f] shadow-md">
+        <h3 className="text-[#e3d0b3] font-bold tracking-widest uppercase text-xs min-w-0 truncate">
+          Pre-Combat
+        </h3>
+
+        <div className="flex items-center gap-1.5 ml-auto shrink-0">
+          <button
+            onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(1)))}
+            disabled={zoom <= 1}
+            className="w-7 h-7 border border-[#8c7f73] text-[#e3d0b3] font-bold text-sm rounded disabled:opacity-30"
+          >
+            −
+          </button>
+          <span className="text-[#8c7f73] text-[10px] font-bold w-9 text-center">{Math.round(zoom * 100)}%</span>
+          <button
+            onClick={() => setZoom(z => Math.min(4, +(z + 0.5).toFixed(1)))}
+            disabled={zoom >= 4}
+            className="w-7 h-7 border border-[#8c7f73] text-[#e3d0b3] font-bold text-sm rounded disabled:opacity-30"
+          >
+            +
+          </button>
         </div>
+
+        <button
+          onClick={() => setShowMatchData(false)}
+          className="shrink-0 bg-[#85200c] border border-[#e3d0b3] text-white px-3 py-1.5 rounded text-[10px] font-bold tracking-widest uppercase shadow-md"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* Body */}
+      <div
+        ref={modalBodyRef}
+        className="flex-1 min-h-0 min-w-0 overflow-auto p-2 bg-[#0f141c] custom-scrollbar"
+      >
+        <div
+          className="relative mx-auto"
+          style={{
+            width: `${CARD_W * previewScale * zoom}px`,
+            height: `${cardHeight * previewScale * zoom}px`,
+          }}
+        >
+          <div
+            ref={cardInnerRef}
+            style={{
+              width: `${CARD_W}px`,
+              transform: `scale(${previewScale * zoom})`,
+              transformOrigin: 'top left',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+            }}
+          >
+            {renderCardContent()}
+          </div>
+        </div>
+      </div>
+
+      {/* Footer: aman dari bilah navigasi HP */}
+      <div
+        className="px-4 pt-3 border-t border-[#8c7f73] bg-[#12161f] shrink-0"
+        style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+      >
+        <button
+          onClick={downloadMatchData}
+          disabled={isDownloading}
+          className="w-full bg-[#1C2330] border border-[#e3d0b3] text-[#e3d0b3] px-4 py-3 text-xs font-bold tracking-widest uppercase active:bg-[#e3d0b3] active:text-[#1C2330] flex items-center justify-center gap-2"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          {isDownloading ? 'MENYIMPAN...' : 'SIMPAN PRE-COMBAT'}
+        </button>
+      </div>
+    </div>,
+    document.body
+  )
+)
       )}
 
       <Modal isOpen={modal.isOpen} onClose={() => setModal({ ...modal, isOpen: false })} message={modal.message} type={modal.type} />

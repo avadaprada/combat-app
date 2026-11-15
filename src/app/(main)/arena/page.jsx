@@ -920,10 +920,24 @@ export default function ArenaPage() {
     return () => clearInterval(pollTimerRef.current)
   }, [view, arenaData])
 
+    // Cek posisi scroll untuk auto-scroll yang lebih pintar
+  const prevLogLengthRef = useRef(0);
+
   useEffect(() => {
     if (!logContainerRef.current) return;
     const container = logContainerRef.current;
-    container.scrollTop = container.scrollHeight;
+    
+    // Jika user sedang scroll jauh ke atas (jarak dari bawah > 150px), jangan paksa scroll
+    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    
+    // Hanya paksa scroll jika user ada di bawah, ATAU ada pesan baru
+    const hasNewLog = duelData?.log && duelData.log.length > prevLogLengthRef.current;
+    
+    if (isNearBottom || hasNewLog) {
+      container.scrollTop = container.scrollHeight;
+    }
+    
+    prevLogLengthRef.current = duelData?.log?.length || 0;
   }, [duelData?.log])
 
   const filteredDeckMaterials = materialsList.filter(m => {
@@ -942,6 +956,10 @@ export default function ArenaPage() {
   });
 
   const myDeckNames = duelData && arenaData ? (duelData[arenaData.myRole === 'A' ? 'a' : 'b'].deck || []) : [];
+
+   if (view === 'duel' && (!arenaData || !duelData)) {
+    return <div className="text-white p-10 text-center">Memuat data duel...</div>;
+  }
 
   return (
     <div className="max-w-[1500px] mx-auto p-3 md:p-6">
@@ -1047,7 +1065,7 @@ export default function ArenaPage() {
                       <div className="text-center text-[#8c7f73] py-8 border border-dashed border-[#8c7f73] text-xs md:text-sm flex-1 flex items-center justify-center rounded min-h-[320px]">Belum ada material untuk style dan tier ini.</div>
                     ) : (
                       <div 
-                        className="relative w-full h-[320px] md:h-[400px] flex justify-center items-center mt-2"
+                        className="relative w-full h-[320px] md:h-[400px] flex justify-center items-center mt-2 touch-pan-y"
                         style={{ perspective: '1200px' }}
                       >
                         
@@ -1677,7 +1695,7 @@ export default function ArenaPage() {
         ) : (
   /* ---------- MOBILE (via portal) ---------- */
   createPortal(
-    <div className="fixed left-0 top-0 w-full h-[100dvh] z-[9999] flex flex-col bg-[#0f141c] overflow-hidden">
+    <div className="fixed inset-0 z-[99999] flex flex-col bg-[#0f141c] overflow-hidden" style={{ touchAction: 'none' }}>
 
       {/* Header: selalu terlihat */}
       <div className="flex items-center gap-2 p-3 border-b border-[#8c7f73] shrink-0 bg-[#12161f] shadow-md">

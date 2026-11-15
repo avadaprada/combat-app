@@ -246,6 +246,11 @@ export default function ArenaPage() {
     if (!selectedStyle) return setModal({ isOpen: true, message: 'Pilih Combat Style terlebih dahulu!', type: 'error' })
     if (selectedMaterials.length === 0) return setModal({ isOpen: true, message: 'Pilih minimal 1 material!', type: 'error' })
 
+    const maxDeck = TIER_DECK_LIMIT[arenaData.license.tier] || 5;
+      if (selectedMaterials.length !== maxDeck) {
+        return setModal({ isOpen: true, message: `Deck belum penuh! Kamu harus memilih tepat ${maxDeck} material.`, type: 'error' })
+      }
+
     setLoading(true)
     const { data: { user } } = await supabase.auth.getUser()
     const combatId = user.email.split('@')[0].trim().toUpperCase()
@@ -1031,7 +1036,9 @@ export default function ArenaPage() {
                   <div className="flex flex-col">
                     <div className="text-[#8c7f73] text-[10px] md:text-xs mb-2 flex justify-between">
                       <span>2. Pilih Material (Maks: {TIER_DECK_LIMIT[arenaData.license.tier] || 5})</span>
-                      <span className="text-[#e3d0b3] font-bold">{selectedMaterials.length} terpilih</span>
+                      <span className={`font-bold ${selectedMaterials.length === (TIER_DECK_LIMIT[arenaData.license.tier] || 5) ? 'text-[#4a7c59]' : 'text-[#e3d0b3]'}`}>
+                        {selectedMaterials.length} / {TIER_DECK_LIMIT[arenaData.license.tier] || 5} terpilih
+                      </span>
                     </div>
                     
                     {!selectedStyle ? (
@@ -1139,8 +1146,12 @@ export default function ArenaPage() {
                 </div>
 
                 <div className="mt-4 pt-3 md:pt-4 border-t border-[#8c7f73]">
-                  <button onClick={handleConfirmDeck} disabled={loading || selectedMaterials.length === 0} className="w-full bg-[#e3d0b3] text-[#1c222e] font-bold py-2 md:py-3 text-xs md:text-sm tracking-widest uppercase hover:bg-white transition-colors disabled:opacity-50">
-                    Konfirmasi Deck ({selectedMaterials.length} Kartu)
+                  <button 
+                    onClick={handleConfirmDeck} 
+                    disabled={loading || selectedMaterials.length !== (TIER_DECK_LIMIT[arenaData.license.tier] || 5)} 
+                    className="w-full bg-[#e3d0b3] text-[#1c222e] font-bold py-2 md:py-3 text-xs md:text-sm tracking-widest uppercase hover:bg-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Konfirmasi Deck ({selectedMaterials.length} / {TIER_DECK_LIMIT[arenaData.license.tier] || 5} Kartu)
                   </button>
                 </div>
               </div>
